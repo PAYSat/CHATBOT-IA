@@ -14,6 +14,7 @@
   "dependencies": {
     "@builderbot-plugins/openai-assistants": "^0.0.2",
     "@builderbot/bot": "1.2.2",
+    "@builderbot/database-postgres": "^1.2.5",
     "@builderbot/provider-baileys": "1.2.2",
     "@builderbot/provider-twilio": "^1.2.5",
     "dotenv": "^16.4.5",

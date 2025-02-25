@@ -14,6 +14,9 @@ importers:
       '@builderbot/bot':
         specifier: 1.2.2
         version: 1.2.2
+      '@builderbot/database-postgres':
+        specifier: ^1.2.5
+        version: 1.2.5
       '@builderbot/provider-baileys':
         specifier: 1.2.2
         version: 1.2.2(qrcode-terminal@0.12.0)
@@ -79,6 +82,12 @@ packages:
 
   '@builderbot/bot@1.2.2':
     resolution: {integrity: sha512-wIkcccE51Xx4pSBvwezvOJSsvJY2seytAxpCurjzrIXapplgRvg0yE7rn2Qq1DsniBzXCrKJ9ILv1ZbEmBPrgQ==}
+
+  '@builderbot/bot@1.2.5':
+    resolution: {integrity: sha512-QONG0BFoT2d/bRmQ0kRSXHyrwbwlWYxk1gT3QRVsQQv9nFs7nNNzTQtMVavTh9KyP0DOlN7ojsP5H1Nan9bPzg==}
+
+  '@builderbot/database-postgres@1.2.5':
+    resolution: {integrity: sha512-c/Uldls+6dm7qWWNAen18G+AUK6NbnMrl7eccYEBVMUIyWICA7Bx28aD+1vN39PfXMeWf8dI7BDlphtKV/gKSA==}
 
   '@builderbot/provider-baileys@1.2.2':
     resolution: {integrity: sha512-Yj37OqyZrTRbEtPuY5IOTaH4tahNweqzgx8HAENPrf7UU5sFQIuTXEIjyA1Ycm9G44O4o1qZz1ZxsAlhzYPLbA==}
@@ -2006,6 +2015,31 @@ snapshots:
       sharp: 0.33.3
     transitivePeerDependencies:
       - debug
+      - supports-color
+
+  '@builderbot/bot@1.2.5':
+    dependencies:
+      '@ffmpeg-installer/ffmpeg': 1.1.0
+      body-parser: 1.20.2
+      cors: 2.8.5
+      fluent-ffmpeg: 2.1.2
+      follow-redirects: 1.15.6
+      mime-types: 2.1.35
+      picocolors: 1.0.0
+      polka: 0.5.2
+    optionalDependencies:
+      sharp: 0.33.3
+    transitivePeerDependencies:
+      - debug
+      - supports-color
+
+  '@builderbot/database-postgres@1.2.5':
+    dependencies:
+      '@builderbot/bot': 1.2.5
+      pg: 8.13.3
+    transitivePeerDependencies:
+      - debug
+      - pg-native
       - supports-color
 
   '@builderbot/provider-baileys@1.2.2(qrcode-terminal@0.12.0)':
