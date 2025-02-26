@@ -121,24 +121,24 @@ const main = async () => {
 
     polkaApp.post("/webhook", async (req, res) => {
         console.log("📥 Webhook recibido de Twilio:", JSON.stringify(req.body, null, 2));
-
-        let messageBody = req.body.Body || (req.body.body ? req.body.body.Body : null);
-        let sender = req.body.From || (req.body.body ? req.body.body.From : null);
-
+    
+        // ✅ Extraer correctamente el mensaje del usuario
+        let messageBody = req.body.Body || (req.body.body && req.body.body.Body);
+        let sender = req.body.From || (req.body.body && req.body.body.From);
+    
         if (!messageBody || !sender) {
             console.error("🚨 Error: No se pudo extraer el mensaje o el remitente.");
             return res.status(400).send("No message received");
         }
-
+    
         console.log(`📩 Mensaje recibido de ${sender}: ${messageBody}`);
-
+    
+        // ✅ Responder inmediatamente para que Twilio no interrumpa la conexión
         res.setHeader("Content-Type", "text/xml");
         res.status(200).end("<Response></Response>");
+    
+        // 🔥 Pasar el mensaje al flujo del bot aquí
     });
-
-    httpInject(polkaApp);
-    httpServer(+PORT);
-    console.log(`🚀 Webhook escuchando en el puerto ${PORT}`);
-};
+}    
 
 main();
