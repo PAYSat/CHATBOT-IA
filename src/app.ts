@@ -1,41 +1,45 @@
 import "dotenv/config";
-import express, { Request, Response } from "express";
+import express from "express";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
 
-/** Puerto del servidor */
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3008;
+/** Puerto en el que se ejecutará el servidor */
+const PORT = process.env.PORT ?? 3008;
 /** ID del asistente de OpenAI */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
+const userQueues = new Map();
+const userLocks = new Map(); // Mecanismo de bloqueo
 
-/** Mapeo de usuarios en espera y bloqueos */
-const userQueues = new Map<string, any[]>();
-const userLocks = new Map<string, boolean>();
+const app = express();
+
+// 📌 Asegurar que Express procese bien las peticiones entrantes
+app.use(express.json()); // Manejo de JSON
+app.use(express.urlencoded({ extended: true })); // Manejo de form-data (x-www-form-urlencoded)
 
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
-const processUserMessage = async (ctx: any, { flowDynamic, state, provider }: any) => {
+const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
-
-    if (!ctx.body) {
-        console.error("🚨 Error: El cuerpo del mensaje está vacío.");
-        return;
-    }
-
+    
     const startOpenAI = Date.now();
     const response = await toAsk(ASSISTANT_ID, ctx.body, state);
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
+    // Divide la respuesta en fragmentos y los envía secuencialmente
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+        
         const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]);
+        console.log(`📤 Enviando mensaje a Twilio: ${cleanedChunk}`);
+        
+        await flowDynamic(cleanedChunk); // Enviamos solo texto
+        
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
@@ -44,37 +48,37 @@ const processUserMessage = async (ctx: any, { flowDynamic, state, provider }: an
 /**
  * Maneja la cola de mensajes para cada usuario.
  */
-const handleQueue = async (userId: string, bot: any) => {
+const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
-
-    if (!queue || userLocks.get(userId)) {
-        return;
+    
+    if (userLocks.get(userId)) {
+        return; // Si está bloqueado, omitir procesamiento
     }
-
-    console.log(`📩 Mensajes en la cola de ${userId}: ${queue.length}`);
-
-    while (queue.length) {
-        userLocks.set(userId, true);
+    
+    console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
+    
+    while (queue.length > 0) {
+        userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
             await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
-            console.error(`🚨 Error procesando mensaje para ${userId}:`, error);
+            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
         } finally {
-            userLocks.set(userId, false);
+            userLocks.set(userId, false); // Liberar el bloqueo
         }
     }
 
-    userLocks.delete(userId);
-    userQueues.delete(userId);
+    userLocks.delete(userId); // Eliminar bloqueo una vez procesados todos los mensajes
+    userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
 };
 
 /**
- * Flujo de bienvenida del bot
+ * Flujo de bienvenida que maneja las respuestas del asistente de IA
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
-        const userId = ctx.from;
+        const userId = ctx.from; // Identificador único por usuario
 
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
@@ -83,54 +87,14 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         const queue = userQueues.get(userId);
         queue.push({ ctx, flowDynamic, state, provider });
 
+        // Si este es el único mensaje en la cola, procesarlo inmediatamente
         if (!userLocks.get(userId) && queue.length === 1) {
-            await handleQueue(userId, botInstance);
+            await handleQueue(userId);
         }
     });
 
 /**
- * Express para manejar el webhook de Twilio
- */
-const app = express();
-app.use(express.json());
-
-let botInstance: any; // Almacena la instancia del bot
-
-app.post("/webhook", async (req: Request, res: Response) => {
-    console.log("📥 Webhook recibido de Twilio:", req.body);
-
-    // 🔥 Validar que req.body tiene los datos esperados
-    if (!req.body || !req.body.Body || !req.body.From) {
-        console.error("🚨 Error: Webhook recibido sin datos válidos.", req.body);
-        return res.status(400).send("Invalid webhook payload");
-    }
-
-    res.status(200).send("OK");
-
-    const { Body, From } = req.body;
-    const userId = From;
-
-    if (!botInstance) {
-        console.error("🚨 Bot no inicializado");
-        return;
-    }
-
-    const { flowDynamic, state, provider } = botInstance;
-
-    if (!userQueues.has(userId)) {
-        userQueues.set(userId, []);
-    }
-
-    const queue = userQueues.get(userId);
-    queue.push({ ctx: { body: Body, from: From }, flowDynamic, state, provider });
-
-    if (!userLocks.get(userId) && queue.length === 1) {
-        await handleQueue(userId, botInstance);
-    }
-});
-
-/**
- * Función principal que inicia el bot
+ * Función principal que configura e inicia el bot
  */
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
@@ -143,24 +107,40 @@ const main = async () => {
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        host: process.env.POSTGRES_DB_HOST,
-        user: process.env.POSTGRES_DB_USER,
-        password: process.env.POSTGRES_DB_PASSWORD,
-        database: process.env.POSTGRES_DB_NAME,
-        port: Number(process.env.POSTGRES_DB_PORT),
+        host: process.env.PGHOST,         // ✅ Corrección de variables de Railway
+        user: process.env.PGUSER,         // ✅ Corrección de variables de Railway
+        password: process.env.PGPASSWORD, // ✅ Corrección de variables de Railway
+        database: process.env.PGDATABASE, // ✅ Corrección de variables de Railway
+        port: Number(process.env.PGPORT),
     });
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
-    botInstance = await createBot({
+    const { httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
 
-    httpInject(adapterProvider.server);
+    /**
+     * 🔥 Webhook de Twilio mejorado
+     */
+    httpInject((req, res) => {
+        console.log("📥 Webhook recibido de Twilio:");
+        console.log("👉 Headers:", req.headers);
+        console.log("👉 Body:", req.body);
 
-    app.listen(PORT, () => console.log(`🚀 Webhook escuchando en el puerto ${PORT}`));
+        if (!req.body || Object.keys(req.body).length === 0) {
+            console.error("🚨 Error: Webhook recibido sin datos válidos.");
+            return res.status(400).send("Bad Request: No data received");
+        }
+
+        res.setHeader("Content-Type", "text/xml");
+        res.status(200).send("<Response></Response>"); // Evita devolver JSON antes del mensaje real
+    });
+
+    httpServer(+PORT);
+    console.log(`🚀 Webhook escuchando en el puerto ${PORT}`);
 };
 
 main();
