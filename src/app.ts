@@ -4,12 +4,9 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import polka from "polka";
-import bodyParser from "body-parser"; // 🔥 Agregamos body-parser
 
 /** Puerto en el que se ejecutará el servidor */
-const PORT = process.env.PORT || 3008; // Usa el puerto asignado por Railway o 3008 si es local
-
+const PORT = process.env.PORT ?? 3008;
 /** ID del asistente de OpenAI */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
@@ -30,12 +27,9 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-
+        
         const startTwilio = Date.now();
-        console.log(`📤 Enviando mensaje a Twilio: ${cleanedChunk}`);
-        
-        await flowDynamic(cleanedChunk); // Enviar solo texto limpio
-        
+        await flowDynamic([{ body: cleanedChunk }]);
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
@@ -74,7 +68,8 @@ const handleQueue = async (userId) => {
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
-        const userId = ctx.from;
+        const userId = ctx.from; // Identificador único por usuario
+
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
         }
@@ -82,6 +77,7 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         const queue = userQueues.get(userId);
         queue.push({ ctx, flowDynamic, state, provider });
 
+        // Si este es el único mensaje en la cola, procesarlo inmediatamente
         if (!userLocks.get(userId) && queue.length === 1) {
             await handleQueue(userId);
         }
@@ -101,11 +97,11 @@ const main = async () => {
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        host: process.env.PGHOST,
-        user: process.env.PGUSER,
-        password: process.env.PGPASSWORD,
-        database: process.env.PGDATABASE,
-        port: Number(process.env.PGPORT),
+        host: process.env.POSTGRES_DB_HOST,         // Host proporcionado por Railway
+        user: process.env.POSTGRES_DB_USER,         // Usuario proporcionado por Railway
+        password: process.env.POSTGRES_DB_PASSWORD, // Contraseña proporcionada por Railway
+        database: process.env.POSTGRES_DB_NAME,     // Nombre de la base de datos
+        port: Number(process.env.POSTGRES_DB_PORT)
     });
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
@@ -116,30 +112,8 @@ const main = async () => {
         database: adapterDB,
     });
 
-    const polkaApp = polka();
-    polkaApp.use(bodyParser.urlencoded({ extended: false }));
-    polkaApp.use(bodyParser.json());
-
-    polkaApp.post("/webhook", async (req, res) => {
-        console.log("📥 Webhook recibido de Twilio:", JSON.stringify(req.body, null, 2));
-
-        res.setHeader("Content-Type", "text/xml");
-        res.status(200).end("<Response></Response>");
-
-        let messageBody = req.body.Body || (req.body.body && req.body.body.Body);
-        let sender = req.body.From || (req.body.body && req.body.body.From);
-
-        if (!messageBody || !sender) {
-            console.error("🚨 Error: No se pudo extraer el mensaje o el remitente.");
-            return;
-        }
-
-        console.log(`📩 Mensaje recibido de ${sender}: ${messageBody}`);
-    });
-
-    polkaApp.listen(PORT, () => {
-        console.log(`🚀 Servidor Polka corriendo en el puerto ${PORT}`);
-    });
+    httpInject(adapterProvider.server);
+    httpServer(+PORT);
 };
 
 main();
