@@ -4,7 +4,7 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import express from "express";
+import express from 'express'; // Importa express
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -132,4 +132,3 @@ const main = async () => {
 };
 
 main();
-
