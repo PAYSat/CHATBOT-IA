@@ -15,25 +15,6 @@ const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
 
 /**
- * Crear un objeto state personalizado con un método update
- */
-const createState = () => {
-    const data = new Map(); // Usamos un Map para almacenar los datos
-
-    return {
-        get: (key) => data.get(key),
-        set: (key, value) => data.set(key, value),
-        update: (key, value) => {
-            if (data.has(key)) {
-                data.set(key, { ...data.get(key), ...value });
-            } else {
-                data.set(key, value);
-            }
-        },
-    };
-};
-
-/**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
@@ -44,7 +25,15 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         console.log('Mensaje:', ctx.body);
 
         const startOpenAI = Date.now();
+
+        // Asegúrate de que el mensaje no esté vacío
+        if (!ctx.body || typeof ctx.body !== 'string') {
+            throw new Error('El mensaje no puede estar vacío.');
+        }
+
+        // Llama a toAsk con el mensaje directamente
         const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+
         const endOpenAI = Date.now();
         console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
@@ -167,11 +156,18 @@ const main = async () => {
 
             console.log(`Mensaje recibido: ${message} de ${from} a ${to}`);
 
-            // Crear un objeto state personalizado
-            const state = createState();
+            // Crear un objeto state como un Map
+            const state = new Map();
+
+            // Implementación de flowDynamic
+            const flowDynamic = async (messages) => {
+                for (const msg of messages) {
+                    await adapterProvider.sendMessage(from, msg.body);
+                }
+            };
 
             // Procesa el mensaje
-            await processUserMessage({ body: message, from, to }, { flowDynamic: null, state, provider: adapterProvider });
+            await processUserMessage({ body: message, from, to }, { flowDynamic, state, provider: adapterProvider });
 
             res.status(200).send('Mensaje recibido');
         } catch (error) {
