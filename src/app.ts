@@ -19,7 +19,7 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
-    
+
     const startOpenAI = Date.now();
     const response = await toAsk(ASSISTANT_ID, ctx.body, state);
     const endOpenAI = Date.now();
@@ -32,9 +32,9 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
 
         const startTwilio = Date.now();
         console.log(`📤 Enviando mensaje a Twilio: ${cleanedChunk}`);
-        
+
         await flowDynamic(cleanedChunk); // Enviar solo texto limpio
-        
+
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
@@ -45,13 +45,13 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
  */
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
-    
+
     if (userLocks.get(userId)) {
         return; // Si está bloqueado, omitir procesamiento
     }
-    
+
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
-    
+
     while (queue.length > 0) {
         userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
@@ -121,24 +121,24 @@ const main = async () => {
 
     polkaApp.post("/webhook", async (req, res) => {
         console.log("📥 Webhook recibido de Twilio:", JSON.stringify(req.body, null, 2));
-    
-        // ✅ Extraer correctamente el mensaje del usuario
+
         let messageBody = req.body.Body || (req.body.body && req.body.body.Body);
         let sender = req.body.From || (req.body.body && req.body.body.From);
-    
+
         if (!messageBody || !sender) {
             console.error("🚨 Error: No se pudo extraer el mensaje o el remitente.");
             return res.status(400).send("No message received");
         }
-    
+
         console.log(`📩 Mensaje recibido de ${sender}: ${messageBody}`);
-    
-        // ✅ Responder inmediatamente para que Twilio no interrumpa la conexión
+
         res.setHeader("Content-Type", "text/xml");
         res.status(200).end("<Response></Response>");
-    
-        // 🔥 Pasar el mensaje al flujo del bot aquí
     });
-}    
+
+    httpInject(polkaApp);
+    console.log("🚀 Webhook correctamente configurado en /webhook");
+
+}
 
 main();
