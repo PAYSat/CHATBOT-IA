@@ -17,6 +17,7 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
+    console.log("📩 Procesando mensaje:", ctx.body);
     await typing(ctx, provider);
     
     const startOpenAI = Date.now();
@@ -24,18 +25,11 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    // Divide la respuesta en fragmentos y los envía secuencialmente
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-
-        const startTwilio = Date.now();
-        console.log(`📤 Enviando mensaje a Twilio: ${cleanedChunk}`);
-        
-        await flowDynamic(cleanedChunk); // Enviar solo texto limpio
-        
-        const endTwilio = Date.now();
-        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+        console.log("📤 Respuesta enviada a Twilio:", cleanedChunk);
+        await flowDynamic(cleanedChunk);
     }
 };
 
@@ -46,34 +40,39 @@ const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
     
     if (userLocks.get(userId)) {
-        return; // Si está bloqueado, omitir procesamiento
+        return;
     }
     
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
     
     while (queue.length > 0) {
-        userLocks.set(userId, true); // Bloquear la cola
+        userLocks.set(userId, true);
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
             await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
             console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
         } finally {
-            userLocks.set(userId, false); // Liberar el bloqueo
+            userLocks.set(userId, false);
         }
     }
 
-    userLocks.delete(userId); // Eliminar bloqueo una vez procesados todos los mensajes
-    userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
+    userLocks.delete(userId);
+    userQueues.delete(userId);
 };
 
 /**
- * Flujo de bienvenida que maneja las respuestas del asistente de IA
+ * Flujo de bienvenida que solo se activa en el primer mensaje del usuario.
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
-        const userId = ctx.from; // Identificador único por usuario
+        if (state.has(ctx.from)) {
+            console.log("🔄 Usuario ya interactuó antes, omitiendo flujo de bienvenida.");
+            return;
+        }
 
+        state.update(ctx.from, { active: true });
+        const userId = ctx.from;
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
         }
@@ -81,7 +80,26 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         const queue = userQueues.get(userId);
         queue.push({ ctx, flowDynamic, state, provider });
 
-        // Si este es el único mensaje en la cola, procesarlo inmediatamente
+        if (!userLocks.get(userId) && queue.length === 1) {
+            await handleQueue(userId);
+        }
+    });
+
+/**
+ * Flujo principal que maneja los mensajes posteriores al primero.
+ */
+const mainFlow = addKeyword(["*"])
+    .addAction(async (ctx, { flowDynamic, state, provider }) => {
+        console.log("📩 Mensaje recibido (MainFlow):", ctx.body);
+
+        const userId = ctx.from;
+        if (!userQueues.has(userId)) {
+            userQueues.set(userId, []);
+        }
+
+        const queue = userQueues.get(userId);
+        queue.push({ ctx, flowDynamic, state, provider });
+
         if (!userLocks.get(userId) && queue.length === 1) {
             await handleQueue(userId);
         }
@@ -91,7 +109,7 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
  * Función principal que configura e inicia el bot
  */
 const main = async () => {
-    const adapterFlow = createFlow([welcomeFlow]);
+    const adapterFlow = createFlow([welcomeFlow, mainFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
         accountSid: process.env.ACCOUNT_SID,
@@ -101,10 +119,10 @@ const main = async () => {
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        host: process.env.PGHOST,         // ✅ Corrección de variables de Railway
-        user: process.env.PGUSER,         // ✅ Corrección de variables de Railway
-        password: process.env.PGPASSWORD, // ✅ Corrección de variables de Railway
-        database: process.env.PGDATABASE, // ✅ Corrección de variables de Railway
+        host: process.env.PGHOST,
+        user: process.env.PGUSER,
+        password: process.env.PGPASSWORD,
+        database: process.env.PGDATABASE,
         port: Number(process.env.PGPORT),
     });
     const endDB = Date.now();
@@ -117,27 +135,18 @@ const main = async () => {
     });
 
     /**
-     * 🔥 ✅ Solución Final: Crear un servidor `Polka` correctamente
+     * 🔥 Servidor `Polka` para recibir webhooks de Twilio
      */
     const polkaApp = polka();
 
     polkaApp.use((req, res, next) => {
         console.log("📥 Webhook recibido de Twilio:", req.body);
-
-        if (!req.body || Object.keys(req.body).length === 0) {
-            console.error("🚨 Error: Webhook recibido sin datos válidos.");
-            return res.status(400).send("Bad Request: No data received");
-        }
-
-        // 🚀 Responder con XML vacío para que Twilio no tome el JSON como respuesta
         res.setHeader("Content-Type", "text/xml");
         res.status(200).end("<Response></Response>");
-
-        // Continuar con la ejecución normal
         next();
     });
 
-    httpInject(polkaApp); // ✅ Pasamos el servidor `Polka` a `httpInject()`
+    httpInject(polkaApp);
     
     httpServer(+PORT);
     console.log(`🚀 Webhook escuchando en el puerto ${PORT}`);
