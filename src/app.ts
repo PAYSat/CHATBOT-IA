@@ -4,7 +4,8 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import polka from "polka"; // 🔥 Importamos Polka para evitar errores de tipo
+import polka from "polka";
+import bodyParser from "body-parser"; // 🔥 Agregamos body-parser
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -72,8 +73,7 @@ const handleQueue = async (userId) => {
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
-        const userId = ctx.from; // Identificador único por usuario
-
+        const userId = ctx.from;
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
         }
@@ -81,7 +81,6 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         const queue = userQueues.get(userId);
         queue.push({ ctx, flowDynamic, state, provider });
 
-        // Si este es el único mensaje en la cola, procesarlo inmediatamente
         if (!userLocks.get(userId) && queue.length === 1) {
             await handleQueue(userId);
         }
@@ -101,10 +100,10 @@ const main = async () => {
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        host: process.env.PGHOST,         // ✅ Corrección de variables de Railway
-        user: process.env.PGUSER,         // ✅ Corrección de variables de Railway
-        password: process.env.PGPASSWORD, // ✅ Corrección de variables de Railway
-        database: process.env.PGDATABASE, // ✅ Corrección de variables de Railway
+        host: process.env.PGHOST,
+        user: process.env.PGUSER,
+        password: process.env.PGPASSWORD,
+        database: process.env.PGDATABASE,
         port: Number(process.env.PGPORT),
     });
     const endDB = Date.now();
@@ -116,29 +115,28 @@ const main = async () => {
         database: adapterDB,
     });
 
-    /**
-     * 🔥 ✅ Solución Final para evitar respuesta JSON y corregir error TS2345
-     */
-    const polkaApp = polka(); // 🔥 Creamos una instancia de Polka
-    
-    polkaApp.use((req, res, next) => {
-        console.log("📥 Webhook recibido de Twilio:");
-        
-        if (!req.body || Object.keys(req.body).length === 0) {
-            console.error("🚨 Error: Webhook recibido sin datos válidos.");
-            return res.status(400).send("Bad Request: No data received");
+    const polkaApp = polka();
+    polkaApp.use(bodyParser.urlencoded({ extended: false }));
+    polkaApp.use(bodyParser.json());
+
+    polkaApp.post("/webhook", async (req, res) => {
+        console.log("📥 Webhook recibido de Twilio:", JSON.stringify(req.body, null, 2));
+
+        let messageBody = req.body.Body || (req.body.body ? req.body.body.Body : null);
+        let sender = req.body.From || (req.body.body ? req.body.body.From : null);
+
+        if (!messageBody || !sender) {
+            console.error("🚨 Error: No se pudo extraer el mensaje o el remitente.");
+            return res.status(400).send("No message received");
         }
 
-        // 🚀 Responder con XML vacío inmediatamente para evitar respuesta JSON antes del mensaje real
+        console.log(`📩 Mensaje recibido de ${sender}: ${messageBody}`);
+
         res.setHeader("Content-Type", "text/xml");
         res.status(200).end("<Response></Response>");
-        
-        // Continuar con el flujo de Twilio
-        next();
     });
 
-    httpInject(polkaApp); // ✅ Inyectamos correctamente Polka como servidor
-    
+    httpInject(polkaApp);
     httpServer(+PORT);
     console.log(`🚀 Webhook escuchando en el puerto ${PORT}`);
 };
