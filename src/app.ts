@@ -4,6 +4,7 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import express from "express";
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -112,8 +113,23 @@ const main = async () => {
         database: adapterDB,
     });
 
+    // Crea una instancia de Express
+    const app = express();
+    app.use(express.json()); // Para parsear el cuerpo de las solicitudes JSON
+
+    // Ruta del webhook
+    app.post('/webhook', (req, res) => {
+        console.log('Webhook recibido:', req.body); // Opcional: para depuración
+        res.status(200).end(); // Responde con un 200 OK y un cuerpo vacío
+    });
+
+    // Inyecta el servidor HTTP del proveedor (Twilio)
     httpInject(adapterProvider.server);
-    httpServer(+PORT);
+
+    // Inicia el servidor HTTP
+    httpServer(+PORT); // Solo pasa el puerto como argumento
+    console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 };
 
 main();
+
