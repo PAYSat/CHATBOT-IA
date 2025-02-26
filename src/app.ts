@@ -124,6 +124,11 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
  * Función principal que configura e inicia el bot
  */
 const main = async () => {
+    // Verifica que las credenciales de Twilio estén configuradas
+    if (!process.env.ACCOUNT_SID || !process.env.AUTH_TOKEN || !process.env.VENDOR_NUMBER) {
+        throw new Error('Las credenciales de Twilio no están configuradas correctamente.');
+    }
+
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
