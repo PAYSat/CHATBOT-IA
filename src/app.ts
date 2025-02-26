@@ -4,8 +4,6 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import express from 'express'; // Importar Express
-import bodyParser from 'body-parser'; // Importar body-parser para manejar el cuerpo de las solicitudes
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -15,44 +13,24 @@ const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
 
 /**
- * Crear un objeto state personalizado con un método update
+ * Interfaz para el payload de Twilio.
  */
-const createState = () => {
-    const data = new Map(); // Usamos un Map para almacenar los datos
-
-    return {
-        get: (key) => data.get(key),
-        set: (key, value) => data.set(key, value),
-        update: (key, value) => {
-            if (data.has(key)) {
-                data.set(key, { ...data.get(key), ...value });
-            } else {
-                data.set(key, value);
-            }
-        },
-    };
-};
+interface TwilioPayload {
+    Body: string;
+    From: string;
+    To: string;
+    // Otros campos que puedan estar presentes en el payload
+}
 
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
-const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
+const processUserMessage = async (ctx: { body: string; from: string }, { flowDynamic, state, provider }) => {
+    await typing(ctx, provider);
+
     try {
-        await typing(ctx, provider);
-
-        console.log('State:', state);
-        console.log('Mensaje:', ctx.body);
-
         const startOpenAI = Date.now();
-
-        // Asegúrate de que el mensaje no esté vacío
-        if (!ctx.body || typeof ctx.body !== 'string') {
-            throw new Error('El mensaje no puede estar vacío.');
-        }
-
-        // Llama a toAsk con el mensaje directamente
         const response = await toAsk(ASSISTANT_ID, ctx.body, state);
-
         const endOpenAI = Date.now();
         console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
@@ -62,20 +40,20 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
             const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
 
             const startTwilio = Date.now();
-            await flowDynamic([{ body: cleanedChunk }], provider);
+            await flowDynamic([{ body: cleanedChunk }]);
             const endTwilio = Date.now();
             console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
         }
     } catch (error) {
-        console.error('Error en processUserMessage:', error);
-        throw error; // Relanza el error para manejarlo en el webhook
+        console.error(`Error procesando mensaje para el usuario ${ctx.from}:`, error);
+        await flowDynamic([{ body: "Lo siento, hubo un error al procesar tu mensaje. Por favor, inténtalo de nuevo." }]);
     }
 };
 
 /**
  * Maneja la cola de mensajes para cada usuario.
  */
-const handleQueue = async (userId) => {
+const handleQueue = async (userId: string) => {
     const queue = userQueues.get(userId);
 
     if (userLocks.get(userId)) {
@@ -84,35 +62,40 @@ const handleQueue = async (userId) => {
 
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
 
-    while (queue.length > 0) {
-        userLocks.set(userId, true); // Bloquear la cola
-        const { ctx, flowDynamic, state, provider } = queue.shift();
-        try {
-            await processUserMessage(ctx, { flowDynamic, state, provider });
-        } catch (error) {
-            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
-        } finally {
-            userLocks.set(userId, false); // Liberar el bloqueo
-        }
-    }
+    userLocks.set(userId, true); // Bloquear la cola
 
-    userLocks.delete(userId); // Eliminar bloqueo una vez procesados todos los mensajes
-    userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
+    try {
+        while (queue.length > 0) {
+            const { ctx, flowDynamic, state, provider } = queue.shift();
+            try {
+                await processUserMessage(ctx, { flowDynamic, state, provider });
+            } catch (error) {
+                console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+            }
+        }
+    } finally {
+        userLocks.delete(userId); // Eliminar bloqueo una vez procesados todos los mensajes
+        userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
+    }
 };
 
 /**
  * Flujo de bienvenida que maneja las respuestas del asistente de IA
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
-    .addAction(async (ctx, { flowDynamic, state, provider }) => {
+    .addAction(async (ctx: { body: TwilioPayload | string; from: string }, { flowDynamic, state, provider }) => {
+        console.log("Payload recibido:", ctx.body); // Depuración del payload
         const userId = ctx.from; // Identificador único por usuario
+
+        // Extraer el mensaje del usuario
+        const userMessage = typeof ctx.body === 'string' ? ctx.body : ctx.body.Body;
 
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
         }
 
         const queue = userQueues.get(userId);
-        queue.push({ ctx, flowDynamic, state, provider });
+        queue.push({ ctx: { ...ctx, body: userMessage }, flowDynamic, state, provider });
 
         // Si este es el único mensaje en la cola, procesarlo inmediatamente
         if (!userLocks.get(userId) && queue.length === 1) {
@@ -124,11 +107,6 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
  * Función principal que configura e inicia el bot
  */
 const main = async () => {
-    // Verifica que las credenciales de Twilio estén configuradas
-    if (!process.env.ACCOUNT_SID || !process.env.AUTH_TOKEN || !process.env.VENDOR_NUMBER) {
-        throw new Error('Las credenciales de Twilio no están configuradas correctamente.');
-    }
-
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -154,59 +132,8 @@ const main = async () => {
         database: adapterDB,
     });
 
-    // Crear una instancia de Express
-    const app = express();
-
-    // Configura el middleware para manejar application/x-www-form-urlencoded y application/json
-    app.use(bodyParser.urlencoded({ extended: false }));
-    app.use(bodyParser.json());
-
-    // Webhook para manejar las solicitudes de Twilio
-    app.post('/webhook', async (req, res) => {
-        try {
-            console.log('Headers:', req.headers);
-            console.log('Body:', req.body);
-
-            let body = req.body;
-
-            // Si el cuerpo es un JSON, accede a la propiedad "body"
-            if (body && body.body) {
-                body = body.body;
-            }
-
-            const message = body.Body || body.body;
-            const from = body.From || body.from;
-            const to = body.To || body.to;
-
-            console.log(`Mensaje recibido: ${message} de ${from} a ${to}`);
-
-            // Crear un objeto state personalizado
-            const state = createState();
-
-            // Implementación de flowDynamic
-            const flowDynamic = async (messages, provider) => {
-                for (const msg of messages) {
-                    await provider.sendMessage(from, msg.body);
-                }
-            };
-
-            // Procesa el mensaje
-            await processUserMessage({ body: message, from, to }, { flowDynamic, state, provider: adapterProvider });
-
-            // Responde solo con un mensaje de éxito (no incluyas el JSON)
-            res.status(200).send('Mensaje recibido');
-        } catch (error) {
-            console.error('Error en el webhook:', error);
-            res.status(500).send('Error interno del servidor');
-        }
-    });
-
-    // Iniciar el servidor
-    app.listen(PORT, () => {
-        console.log(`Servidor escuchando en el puerto ${PORT}`);
-    });
-
     httpInject(adapterProvider.server);
+    httpServer(+PORT);
 };
 
 main();
