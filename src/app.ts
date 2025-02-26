@@ -1,5 +1,4 @@
 import "dotenv/config";
-import express from "express";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
@@ -12,12 +11,6 @@ const PORT = process.env.PORT ?? 3008;
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
-
-const app = express();
-
-// 📌 Asegurar que Express procese bien las peticiones entrantes
-app.use(express.json()); // Manejo de JSON
-app.use(express.urlencoded({ extended: true })); // Manejo de form-data (x-www-form-urlencoded)
 
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
@@ -123,21 +116,9 @@ const main = async () => {
     });
 
     /**
-     * 🔥 Webhook de Twilio mejorado
+     * 🔥 ✅ Solución correcta para `httpInject()`
      */
-    httpInject((req, res) => {
-        console.log("📥 Webhook recibido de Twilio:");
-        console.log("👉 Headers:", req.headers);
-        console.log("👉 Body:", req.body);
-
-        if (!req.body || Object.keys(req.body).length === 0) {
-            console.error("🚨 Error: Webhook recibido sin datos válidos.");
-            return res.status(400).send("Bad Request: No data received");
-        }
-
-        res.setHeader("Content-Type", "text/xml");
-        res.status(200).send("<Response></Response>"); // Evita devolver JSON antes del mensaje real
-    });
+    httpInject(adapterProvider.server); // Inyectamos correctamente el servidor de Twilio
 
     httpServer(+PORT);
     console.log(`🚀 Webhook escuchando en el puerto ${PORT}`);
