@@ -8,7 +8,8 @@ import polka from "polka";
 import bodyParser from "body-parser"; // 🔥 Agregamos body-parser
 
 /** Puerto en el que se ejecutará el servidor */
-const PORT = process.env.PORT ?? 3008;
+const PORT = process.env.PORT || 3008; // Usa el puerto asignado por Railway o 3008 si es local
+
 /** ID del asistente de OpenAI */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
@@ -109,7 +110,7 @@ const main = async () => {
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
-    const { httpServer, handleMessage } = await createBot({
+    const { httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
@@ -121,32 +122,24 @@ const main = async () => {
 
     polkaApp.post("/webhook", async (req, res) => {
         console.log("📥 Webhook recibido de Twilio:", JSON.stringify(req.body, null, 2));
-    
-        // ✅ Extraer correctamente el mensaje del usuario
-        let messageBody = req.body.Body || (req.body.body && req.body.body.Body);
-        let sender = req.body.From || (req.body.body && req.body.body.From);
-    
-        if (!messageBody || !sender) {
-            console.error("🚨 Error: No se pudo extraer el mensaje o el remitente.");
-            return res.status(400).send("No message received");
-        }
-    
-        console.log(`📩 Mensaje recibido de ${sender}: ${messageBody}`);
-    
-        // ✅ Responder inmediatamente para que Twilio no interrumpa la conexión
+
         res.setHeader("Content-Type", "text/xml");
         res.status(200).end("<Response></Response>");
-    
-        // 🔥 Pasar el mensaje al flujo del bot usando handleMessage
-        await handleMessage({
-            from: sender,
-            body: messageBody,
-        });
+
+        let messageBody = req.body.Body || (req.body.body && req.body.body.Body);
+        let sender = req.body.From || (req.body.body && req.body.body.From);
+
+        if (!messageBody || !sender) {
+            console.error("🚨 Error: No se pudo extraer el mensaje o el remitente.");
+            return;
+        }
+
+        console.log(`📩 Mensaje recibido de ${sender}: ${messageBody}`);
     });
 
-    httpInject(polkaApp);
-    httpServer(+PORT);
-    console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
+    polkaApp.listen(PORT, () => {
+        console.log(`🚀 Servidor Polka corriendo en el puerto ${PORT}`);
+    });
 };
 
 main();
