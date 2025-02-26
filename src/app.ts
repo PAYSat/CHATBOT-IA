@@ -4,6 +4,7 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import polka from "polka"; // 🔥 Importamos Polka correctamente
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -27,11 +28,11 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        
+
         const startTwilio = Date.now();
         console.log(`📤 Enviando mensaje a Twilio: ${cleanedChunk}`);
         
-        await flowDynamic(cleanedChunk); // Enviamos solo texto
+        await flowDynamic(cleanedChunk); // Enviar solo texto limpio
         
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
@@ -116,10 +117,28 @@ const main = async () => {
     });
 
     /**
-     * 🔥 ✅ Solución correcta para `httpInject()`
+     * 🔥 ✅ Solución Final: Crear un servidor `Polka` correctamente
      */
-    httpInject(adapterProvider.server); // Inyectamos correctamente el servidor de Twilio
+    const polkaApp = polka();
 
+    polkaApp.use((req, res, next) => {
+        console.log("📥 Webhook recibido de Twilio:", req.body);
+
+        if (!req.body || Object.keys(req.body).length === 0) {
+            console.error("🚨 Error: Webhook recibido sin datos válidos.");
+            return res.status(400).send("Bad Request: No data received");
+        }
+
+        // 🚀 Responder con XML vacío para que Twilio no tome el JSON como respuesta
+        res.setHeader("Content-Type", "text/xml");
+        res.status(200).end("<Response></Response>");
+
+        // Continuar con la ejecución normal
+        next();
+    });
+
+    httpInject(polkaApp); // ✅ Pasamos el servidor `Polka` a `httpInject()`
+    
     httpServer(+PORT);
     console.log(`🚀 Webhook escuchando en el puerto ${PORT}`);
 };
