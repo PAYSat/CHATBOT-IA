@@ -148,8 +148,8 @@ const main = async () => {
 
             console.log(`Mensaje recibido: ${message} de ${from} a ${to}`);
 
-            // Crear un objeto state vacío si no existe
-            const state = {};
+            // Crear un objeto state como un Map
+            const state = new Map();
 
             // Procesa el mensaje
             await processUserMessage({ body: message, from, to }, { flowDynamic: null, state, provider: adapterProvider });
