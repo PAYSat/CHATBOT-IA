@@ -62,7 +62,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
             const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
 
             const startTwilio = Date.now();
-            await flowDynamic([{ body: cleanedChunk }]);
+            await flowDynamic([{ body: cleanedChunk }], provider);
             const endTwilio = Date.now();
             console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
         }
@@ -184,15 +184,16 @@ const main = async () => {
             const state = createState();
 
             // Implementación de flowDynamic
-            const flowDynamic = async (messages) => {
+            const flowDynamic = async (messages, provider) => {
                 for (const msg of messages) {
-                    await adapterProvider.sendMessage(from, msg.body);
+                    await provider.sendMessage(from, msg.body);
                 }
             };
 
             // Procesa el mensaje
             await processUserMessage({ body: message, from, to }, { flowDynamic, state, provider: adapterProvider });
 
+            // Responde solo con un mensaje de éxito (no incluyas el JSON)
             res.status(200).send('Mensaje recibido');
         } catch (error) {
             console.error('Error en el webhook:', error);
