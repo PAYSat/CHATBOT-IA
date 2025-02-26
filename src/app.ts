@@ -83,12 +83,22 @@ const handleQueue = async (userId: string) => {
  * Flujo de bienvenida que maneja las respuestas del asistente de IA
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
-    .addAction(async (ctx: { body: TwilioPayload | string; from: string }, { flowDynamic, state, provider }) => {
-        console.log("Payload recibido:", ctx.body); // Depuración del payload
-        const userId = ctx.from; // Identificador único por usuario
+    .addAction(async (ctx: any, { flowDynamic, state, provider }) => {
+        console.log("Payload recibido:", ctx); // Depuración del payload
 
-        // Extraer el mensaje del usuario
-        const userMessage = typeof ctx.body === 'string' ? ctx.body : ctx.body.Body;
+        // Extraer el mensaje y el identificador del usuario
+        let userMessage: string;
+        let userId: string;
+
+        if (ctx.body && ctx.body.Body) {
+            // Si el payload es de Twilio (JSON con estructura anidada)
+            userMessage = ctx.body.Body;
+            userId = ctx.body.From;
+        } else {
+            // Si el payload es de curl (datos en formato x-www-form-urlencoded)
+            userMessage = ctx.body;
+            userId = ctx.from;
+        }
 
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
@@ -102,7 +112,6 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
             await handleQueue(userId);
         }
     });
-
 /**
  * Función principal que configura e inicia el bot
  */
