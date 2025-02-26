@@ -15,6 +15,25 @@ const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
 
 /**
+ * Crear un objeto state personalizado con un método update
+ */
+const createState = () => {
+    const data = new Map(); // Usamos un Map para almacenar los datos
+
+    return {
+        get: (key) => data.get(key),
+        set: (key, value) => data.set(key, value),
+        update: (key, value) => {
+            if (data.has(key)) {
+                data.set(key, { ...data.get(key), ...value });
+            } else {
+                data.set(key, value);
+            }
+        },
+    };
+};
+
+/**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
@@ -148,8 +167,8 @@ const main = async () => {
 
             console.log(`Mensaje recibido: ${message} de ${from} a ${to}`);
 
-            // Crear un objeto state como un Map
-            const state = new Map();
+            // Crear un objeto state personalizado
+            const state = createState();
 
             // Procesa el mensaje
             await processUserMessage({ body: message, from, to }, { flowDynamic: null, state, provider: adapterProvider });
