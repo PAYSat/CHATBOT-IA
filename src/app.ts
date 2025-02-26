@@ -4,6 +4,8 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import express from 'express'; // Importar Express
+import bodyParser from 'body-parser'; // Importar body-parser para manejar el cuerpo de las solicitudes
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -17,7 +19,7 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
-    
+
     const startOpenAI = Date.now();
     const response = await toAsk(ASSISTANT_ID, ctx.body, state);
     const endOpenAI = Date.now();
@@ -27,7 +29,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        
+
         const startTwilio = Date.now();
         await flowDynamic([{ body: cleanedChunk }]);
         const endTwilio = Date.now();
@@ -40,13 +42,13 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
  */
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
-    
+
     if (userLocks.get(userId)) {
         return; // Si está bloqueado, omitir procesamiento
     }
-    
+
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
-    
+
     while (queue.length > 0) {
         userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
@@ -112,8 +114,48 @@ const main = async () => {
         database: adapterDB,
     });
 
+    // Crear una instancia de Express
+    const app = express();
+
+    // Configura el middleware para manejar application/x-www-form-urlencoded y application/json
+    app.use(bodyParser.urlencoded({ extended: false }));
+    app.use(bodyParser.json());
+
+    // Webhook para manejar las solicitudes de Twilio
+    app.post('/webhook', async (req, res) => {
+        try {
+            console.log('Headers:', req.headers);
+            console.log('Body:', req.body);
+
+            let body = req.body;
+
+            // Si el cuerpo es un JSON, accede a la propiedad "body"
+            if (body && body.body) {
+                body = body.body;
+            }
+
+            const message = body.Body || body.body;
+            const from = body.From || body.from;
+            const to = body.To || body.to;
+
+            console.log(`Mensaje recibido: ${message} de ${from} a ${to}`);
+
+            // Procesa el mensaje
+            await processUserMessage({ body: message, from, to }, { flowDynamic: null, state: null, provider: adapterProvider });
+
+            res.status(200).send('Mensaje recibido');
+        } catch (error) {
+            console.error('Error en el webhook:', error);
+            res.status(500).send('Error interno del servidor');
+        }
+    });
+
+    // Iniciar el servidor
+    app.listen(PORT, () => {
+        console.log(`Servidor escuchando en el puerto ${PORT}`);
+    });
+
     httpInject(adapterProvider.server);
-    httpServer(+PORT);
 };
 
 main();
