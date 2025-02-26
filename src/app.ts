@@ -21,6 +21,11 @@ const userLocks = new Map<string, boolean>();
 const processUserMessage = async (ctx: any, { flowDynamic, state, provider }: any) => {
     await typing(ctx, provider);
 
+    if (!ctx.body) {
+        console.error("🚨 Error: El cuerpo del mensaje está vacío.");
+        return;
+    }
+
     const startOpenAI = Date.now();
     const response = await toAsk(ASSISTANT_ID, ctx.body, state);
     const endOpenAI = Date.now();
@@ -42,13 +47,13 @@ const processUserMessage = async (ctx: any, { flowDynamic, state, provider }: an
 const handleQueue = async (userId: string, bot: any) => {
     const queue = userQueues.get(userId);
 
-    if (userLocks.get(userId)) {
+    if (!queue || userLocks.get(userId)) {
         return;
     }
 
-    console.log(`📩 Mensajes en la cola de ${userId}: ${queue?.length}`);
+    console.log(`📩 Mensajes en la cola de ${userId}: ${queue.length}`);
 
-    while (queue?.length) {
+    while (queue.length) {
         userLocks.set(userId, true);
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
@@ -93,6 +98,12 @@ let botInstance: any; // Almacena la instancia del bot
 
 app.post("/webhook", async (req: Request, res: Response) => {
     console.log("📥 Webhook recibido de Twilio:", req.body);
+
+    // 🔥 Validar que req.body tiene los datos esperados
+    if (!req.body || !req.body.Body || !req.body.From) {
+        console.error("🚨 Error: Webhook recibido sin datos válidos.", req.body);
+        return res.status(400).send("Invalid webhook payload");
+    }
 
     res.status(200).send("OK");
 
@@ -149,7 +160,6 @@ const main = async () => {
 
     httpInject(adapterProvider.server);
 
-    // 🔥 Se elimina la segunda llamada a `botInstance.httpServer(PORT)`
     app.listen(PORT, () => console.log(`🚀 Webhook escuchando en el puerto ${PORT}`));
 };
 
