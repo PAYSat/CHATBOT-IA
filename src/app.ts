@@ -18,22 +18,30 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    await typing(ctx, provider);
+    try {
+        await typing(ctx, provider);
 
-    const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
-    const endOpenAI = Date.now();
-    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
+        console.log('State:', state);
+        console.log('Mensaje:', ctx.body);
 
-    // Divide la respuesta en fragmentos y los envía secuencialmente
-    const chunks = response.split(/\n\n+/);
-    for (const chunk of chunks) {
-        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+        const startOpenAI = Date.now();
+        const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+        const endOpenAI = Date.now();
+        console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-        const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]);
-        const endTwilio = Date.now();
-        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+        // Divide la respuesta en fragmentos y los envía secuencialmente
+        const chunks = response.split(/\n\n+/);
+        for (const chunk of chunks) {
+            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+
+            const startTwilio = Date.now();
+            await flowDynamic([{ body: cleanedChunk }]);
+            const endTwilio = Date.now();
+            console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+        }
+    } catch (error) {
+        console.error('Error en processUserMessage:', error);
+        throw error; // Relanza el error para manejarlo en el webhook
     }
 };
 
@@ -140,8 +148,11 @@ const main = async () => {
 
             console.log(`Mensaje recibido: ${message} de ${from} a ${to}`);
 
+            // Crear un objeto state vacío si no existe
+            const state = {};
+
             // Procesa el mensaje
-            await processUserMessage({ body: message, from, to }, { flowDynamic: null, state: null, provider: adapterProvider });
+            await processUserMessage({ body: message, from, to }, { flowDynamic: null, state, provider: adapterProvider });
 
             res.status(200).send('Mensaje recibido');
         } catch (error) {
