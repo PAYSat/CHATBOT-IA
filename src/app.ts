@@ -116,7 +116,8 @@ const main = async () => {
 
     // Evitar que Twilio devuelva un JSON como mensaje en WhatsApp
     adapterProvider.server.post("/webhook", (req, res) => {
-        res.status(200).send(""); // Responde con HTTP 200 y sin cuerpo
+        console.log("📩 Webhook recibido desde Twilio", req.body); // Verifica lo que Twilio envía
+        res.status(200).send(""); // Enviar una respuesta vacía para evitar que Twilio reenvíe el JSON
     });
 
 
