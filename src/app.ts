@@ -4,7 +4,6 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import { Console } from "console";
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -19,20 +18,24 @@ const userLocks = new Map(); // Mecanismo de bloqueo
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
     
-    const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
-    const endOpenAI = Date.now();
-    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
+    try {
+        const startOpenAI = Date.now();
+        const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+        const endOpenAI = Date.now();
+        console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    // Divide la respuesta en fragmentos y los envía secuencialmente
-    const chunks = response.split(/\n\n+/);
-    for (const chunk of chunks) {
-        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        
-        const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]);
-        const endTwilio = Date.now();
-        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+        // Divide la respuesta en fragmentos y los envía secuencialmente
+        const chunks = response.split(/\n\n+/);
+        for (const chunk of chunks) {
+            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+
+            const startTwilio = Date.now();
+            await flowDynamic([{ body: cleanedChunk }]);
+            const endTwilio = Date.now();
+            console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+        }
+    } catch (error) {
+        console.error("❌ Error en OpenAI:", error);
     }
 };
 
@@ -41,27 +44,30 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
  */
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
-    
+
     if (userLocks.get(userId)) {
         return; // Si está bloqueado, omitir procesamiento
     }
-    
+
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
-    
+
     while (queue.length > 0) {
         userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
             await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
-            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+            console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
+            queue.unshift({ ctx, flowDynamic, state, provider }); // Volver a ponerlo en la cola para reintentar
         } finally {
             userLocks.set(userId, false); // Liberar el bloqueo
         }
     }
 
-    userLocks.delete(userId); // Eliminar bloqueo una vez procesados todos los mensajes
-    userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
+    if (queue.length === 0) {
+        userLocks.delete(userId);
+        userQueues.delete(userId);
+    }
 };
 
 /**
@@ -69,37 +75,24 @@ const handleQueue = async (userId) => {
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
-        console.log("📩 Payload recibido en welcomeFlow:", JSON.stringify(ctx, null, 2));
-
-        let userMessage;
-        let userId;
-
-        if (ctx.Body) {
-            userMessage = ctx.Body;  // Extraer correctamente el mensaje
-            userId = ctx.From;       // Extraer el número de WhatsApp del usuario
-        } else {
-            console.error("⚠️ Error: ctx.Body no está presente en el payload.");
-            return;  // No seguir si el mensaje no es válido
-        }
-
-        console.log(`📥 Mensaje de ${userId}:`, userMessage);
+        const userId = ctx.from;
 
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
         }
 
         const queue = userQueues.get(userId);
-        queue.push({ ctx: { body: userMessage, from: userId }, flowDynamic, state, provider });
+        queue.push({ ctx, flowDynamic, state, provider });
 
-        console.log(`📌 Mensaje agregado a la cola de ${userId}, total en cola: ${queue.length}`);
-
+        // Esperar hasta que Twilio y OpenAI respondan antes de enviar JSON
         if (!userLocks.get(userId) && queue.length === 1) {
             await handleQueue(userId);
         }
+
+        // Evitar respuesta automática de Twilio en formato JSON prematuro
+        return new Promise((resolve) => setTimeout(resolve, 1000));
     });
 
-
-        
 /**
  * Función principal que configura e inicia el bot
  */
@@ -112,25 +105,30 @@ const main = async () => {
         vendorNumber: process.env.VENDOR_NUMBER,
     });
 
-    const startDB = Date.now();
-    const adapterDB = new PostgreSQLAdapter({
-        host: process.env.POSTGRES_DB_HOST,         // Host proporcionado por Railway
-        user: process.env.POSTGRES_DB_USER,         // Usuario proporcionado por Railway
-        password: process.env.POSTGRES_DB_PASSWORD, // Contraseña proporcionada por Railway
-        database: process.env.POSTGRES_DB_NAME,     // Nombre de la base de datos
-        port: Number(process.env.POSTGRES_DB_PORT)
-    });
-    const endDB = Date.now();
-    console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
+    try {
+        console.log("⏳ Conectando a la base de datos...");
+        const adapterDB = new PostgreSQLAdapter({
+            host: process.env.POSTGRES_DB_HOST,
+            user: process.env.POSTGRES_DB_USER,
+            password: process.env.POSTGRES_DB_PASSWORD,
+            database: process.env.POSTGRES_DB_NAME,
+            port: Number(process.env.POSTGRES_DB_PORT)
+        });
 
-    const { httpServer } = await createBot({
-        flow: adapterFlow,
-        provider: adapterProvider,
-        database: adapterDB,
-    });
+        console.log("✅ PostgreSQL conectado exitosamente.");
 
-    httpInject(adapterProvider.server);
-    httpServer(+PORT);
+        const { httpServer } = await createBot({
+            flow: adapterFlow,
+            provider: adapterProvider,
+            database: adapterDB,
+        });
+
+        httpInject(adapterProvider.server);
+        httpServer(+PORT);
+    } catch (error) {
+        console.error("❌ Error al conectar a PostgreSQL:", error);
+        process.exit(1); // Terminar si la conexión a la base de datos falla
+    }
 };
 
 main();
