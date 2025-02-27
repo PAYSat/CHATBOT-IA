@@ -65,8 +65,10 @@ const handleQueue = async (userId) => {
 
 /**
  * Flujo de bienvenida que maneja las respuestas del asistente de IA
+ * 
+ * @type {import('@builderbot/bot').Flow<TwilioProvider, PostgreSQLAdapter>}
  */
-const welcomeFlow = addKeyword(EVENTS.WELCOME)
+const welcomeFlow =addKeyword<TwilioProvider , PostgreSQLAdapter >(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
         const userId = ctx.from; // Identificador único por usuario
 
@@ -85,8 +87,18 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
 
 /**
  * Función principal que configura e inicia el bot
+ *  @async
+ * @returns {Promise<void>}
+ * 
  */
-const main = async () => {
+    
+
+    const main = async () => {
+    /**
+     * Flujo del bot
+     * @type {import('@builderbot/bot').Flow<TwilioProvider, PostgreSQLAdapter>}
+     */    
+
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -105,6 +117,11 @@ const main = async () => {
     });
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
+
+    /**
+     * Configuración y creación del bot
+     * @type {import('@builderbot/bot').Bot<TwilioProvider, PostgreSQLAdapter>}
+     */
 
     const { httpServer } = await createBot({
         flow: adapterFlow,
