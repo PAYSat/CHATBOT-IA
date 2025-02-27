@@ -18,8 +18,50 @@ const userLocks = new Map(); // Mecanismo de bloqueo
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
     
+    // Extraer el texto real del mensaje
+    let userMessage = "";
+    
+    try {
+        // Caso 1: ctx es el mensaje directo
+        if (typeof ctx.body === 'string') {
+            userMessage = ctx.body;
+        } 
+        // Caso 2: ctx.body es un objeto JSON con estructura Twilio
+        else if (typeof ctx.body === 'object') {
+            // Si ctx.body tiene directamente un campo Body
+            if (ctx.body.Body) {
+                userMessage = ctx.body.Body;
+            } 
+            // Si ctx.body tiene un objeto anidado con Body
+            else if (ctx.body.body && ctx.body.body.Body) {
+                userMessage = ctx.body.body.Body;
+            } 
+            // No se pudo extraer el texto
+            else {
+                console.log("⚠️ No se pudo extraer el texto del mensaje:", JSON.stringify(ctx.body).substring(0, 100) + "...");
+                // En este caso, podemos enviar un mensaje genérico o ignorar
+                await flowDynamic([{ body: "Lo siento, no pude entender tu mensaje. Por favor, intenta nuevamente." }]);
+                return;
+            }
+        } else {
+            console.log("⚠️ Formato de mensaje no reconocido:", typeof ctx.body);
+            return;
+        }
+    } catch (error) {
+        console.error("❌ Error al extraer el texto del mensaje:", error);
+        return;
+    }
+    
+    // Registrar el mensaje real que estamos procesando para debugging
+    console.log(`🔍 Procesando mensaje: "${userMessage}"`);
+    
+    if (!userMessage.trim()) {
+        console.log("⚠️ Mensaje vacío, no se procesará");
+        return;
+    }
+    
     const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const response = await toAsk(ASSISTANT_ID, userMessage, state);
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
@@ -68,7 +110,7 @@ const handleQueue = async (userId) => {
  * 
  * @type {import('@builderbot/bot').Flow<TwilioProvider, PostgreSQLAdapter>}
  */
-const welcomeFlow =addKeyword<TwilioProvider , PostgreSQLAdapter >(EVENTS.WELCOME)
+const welcomeFlow = addKeyword<TwilioProvider, PostgreSQLAdapter>(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
         const userId = ctx.from; // Identificador único por usuario
 
@@ -91,9 +133,7 @@ const welcomeFlow =addKeyword<TwilioProvider , PostgreSQLAdapter >(EVENTS.WELCOM
  * @returns {Promise<void>}
  * 
  */
-    
-
-    const main = async () => {
+const main = async () => {
     /**
      * Flujo del bot
      * @type {import('@builderbot/bot').Flow<TwilioProvider, PostgreSQLAdapter>}
