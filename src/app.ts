@@ -117,28 +117,3 @@ const main = async () => {
 };
 
 main();
-
-/**
- * Webhook para Twilio con logs detallados
- */
-import express from "express";
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-app.post("/webhook", (req, res) => {
-    console.log("📩 Webhook recibido desde Twilio:", JSON.stringify(req.body, null, 2));
-
-    // 🔥 Log detallado de la respuesta antes de enviarla
-    console.log("🛠️ Enviando respuesta vacía a Twilio para evitar JSON...");
-
-    res.setHeader("Content-Type", "text/plain");
-    res.status(200).send(" "); // Espacio en blanco para evitar respuestas automáticas
-
-    console.log("✅ Respuesta enviada correctamente.");
-});
-
-// Iniciar Express en Railway
-app.listen(PORT, () => {
-    console.log(`🚀 Servidor Express corriendo en puerto ${PORT}`);
-});
