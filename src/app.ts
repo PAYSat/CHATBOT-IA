@@ -118,9 +118,10 @@ const main = async () => {
     adapterProvider.server.post("/webhook", (req, res) => {
         console.log("📩 Webhook recibido desde Twilio:", req.body); // Para depuración
     
-        // Responder con un JSON vacío para indicar que el mensaje fue recibido y evitar el fallback de Twilio
-        res.status(200).json({});
+        // Enviar un JSON con un mensaje vacío para que Twilio lo interprete como una respuesta válida
+        res.status(200).json({ "message": "" });
     });
+    
     
 
 
