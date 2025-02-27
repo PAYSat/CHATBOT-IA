@@ -1,20 +1,20 @@
 import "dotenv/config";
-import express from "express";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
-import { httpInject, toAsk } from "@builderbot-plugins/openai-assistants";
+import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import { twiml as TwilioTwiml } from "twilio";
 
-// Puerto en el que se ejecutará el servidor
+/** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
-// ID del asistente de OpenAI
+/** ID del asistente de OpenAI */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
 
-// Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
+/**
+ * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
+ */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
     
@@ -35,7 +35,9 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     }
 };
 
-// Maneja la cola de mensajes para cada usuario.
+/**
+ * Maneja la cola de mensajes para cada usuario.
+ */
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
     
@@ -61,8 +63,12 @@ const handleQueue = async (userId) => {
     userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
 };
 
-// Flujo de bienvenida que maneja las respuestas del asistente de IA
-const welcomeFlow = addKeyword(EVENTS.WELCOME)
+/**
+ * Flujo de bienvenida que maneja las respuestas del asistente de IA
+ * 
+ * @type {import('@builderbot/bot').Flow<TwilioProvider, PostgreSQLAdapter>}
+ */
+const welcomeFlow =addKeyword<TwilioProvider , PostgreSQLAdapter >(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
         const userId = ctx.from; // Identificador único por usuario
 
@@ -79,8 +85,20 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         }
     });
 
-// Función principal que configura e inicia el bot
-const main = async () => {
+/**
+ * Función principal que configura e inicia el bot
+ *  @async
+ * @returns {Promise<void>}
+ * 
+ */
+    
+
+    const main = async () => {
+    /**
+     * Flujo del bot
+     * @type {import('@builderbot/bot').Flow<TwilioProvider, PostgreSQLAdapter>}
+     */    
+
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -100,36 +118,18 @@ const main = async () => {
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
+    /**
+     * Configuración y creación del bot
+     * @type {import('@builderbot/bot').Bot<TwilioProvider, PostgreSQLAdapter>}
+     */
+
     const { httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
 
-    // Crear una instancia de Express
-    const app = express();
-    app.use(express.urlencoded({ extended: false }));
-
-    // Definir la ruta para el webhook de Twilio
-    app.post('/webhook', async (req, res) => {
-        // Crear una instancia de MessagingResponse dentro del manejador de la ruta
-        const twiml = new TwilioTwiml.MessagingResponse();
-
-        // Aquí puedes procesar el mensaje entrante y generar una respuesta adecuada
-        // Por ejemplo, podrías llamar a processUserMessage o manejar el mensaje directamente
-        // Asegúrate de que la respuesta sea en formato TwiML
-
-        // Ejemplo de respuesta simple
-        twiml.message('¡Hola! ¿Cómo puedo ayudarte hoy?');
-
-        res.writeHead(200, { 'Content-Type': 'text/xml' });
-        res.end(twiml.toString());
-    });
-
-    // Inyectar el servidor HTTP de Express en el bot
-    httpInject(app);
-
-    // Iniciar el servidor HTTP
+    httpInject(adapterProvider.server);
     httpServer(+PORT);
 };
 
