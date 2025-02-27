@@ -3,23 +3,52 @@ import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@buil
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk } from "@builderbot-plugins/openai-assistants";
-import express from "express"; // Express manual para manejar respuestas del webhook
+import express from "express";
+import net from "net"; // Para verificar si el puerto está en uso
 import { typing } from "./utils/presence";
 
-/** Configuración del puerto */
-const PORT = process.env.PORT || 0; // Permite que el sistema asigne un puerto libre
-const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
-const userQueues = new Map();
-const userLocks = new Map(); // Control de concurrencia para mensajes
+/** Verifica si el puerto está en uso y elige uno nuevo si es necesario */
+const checkPortInUse = (port: number): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
 
-/**
- * Procesa los mensajes del usuario con OpenAI y Twilio
- */
+        server.once("error", (err: NodeJS.ErrnoException) => {
+            if (err.code === "EADDRINUSE") {
+                resolve(true); // Puerto en uso
+            } else {
+                reject(err);
+            }
+        });
+
+        server.once("listening", () => {
+            server.close();
+            resolve(false); // Puerto disponible
+        });
+
+        server.listen(port);
+    });
+};
+
+
+/** Configuración inicial del puerto */
+const getAvailablePort = async (): Promise<number> => {
+    let port = Number(process.env.PORT) || 3008; // Convertimos a número
+
+    if (await checkPortInUse(port)) {
+        console.log(`⚠️ Puerto ${port} en uso. Buscando otro...`);
+        port = Math.floor(Math.random() * (9000 - 3000) + 3000);
+    }
+
+    return port;
+};
+
+
+/** Procesamiento de mensajes del usuario con OpenAI */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
 
     const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const response = await toAsk(process.env.ASSISTANT_ID, ctx.body, state);
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
@@ -34,12 +63,12 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     }
 };
 
-/**
- * Manejador de colas para evitar respuestas simultáneas desordenadas
- */
+/** Manejador de colas para evitar respuestas simultáneas desordenadas */
+const userQueues = new Map();
+const userLocks = new Map();
+
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
-
     if (userLocks.get(userId)) return;
 
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
@@ -60,22 +89,18 @@ const handleQueue = async (userId) => {
     userQueues.delete(userId);
 };
 
-/**
- * Flujo inicial de bienvenida
- */
+/** Flujo de bienvenida optimizado */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
         const userId = ctx.from;
 
-        // 🔥 Corrección: Intentamos convertir ctx.body en JSON si es un string válido
         let body;
         try {
             body = typeof ctx.body === "string" ? JSON.parse(ctx.body) : ctx.body;
         } catch (error) {
-            body = ctx.body; // Si no es un JSON válido, lo dejamos como está
+            body = ctx.body;
         }
 
-        // 🔥 Ignorar mensajes automáticos de Twilio
         if (body && body.ApiVersion) {
             console.log("🔍 Mensaje automático de Twilio detectado, ignorándolo.");
             return;
@@ -93,10 +118,11 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         }
     });
 
-/**
- * Función principal que configura e inicia el bot
- */
+/** Función principal */
 const main = async () => {
+    const PORT = await getAvailablePort(); // Obtener un puerto disponible dinámicamente
+    console.log(`🚀 Iniciando servidor en el puerto ${PORT}`);
+
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -119,7 +145,7 @@ const main = async () => {
         database: adapterDB,
     });
 
-    // 🔥 SOLUCIÓN FINAL: Interceptamos manualmente la respuesta HTTP del webhook de Twilio
+    /** 🔥 Solución definitiva: Interceptamos manualmente la respuesta HTTP del webhook de Twilio */
     const app = express();
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
@@ -130,8 +156,7 @@ const main = async () => {
         res.status(200).send("<Response></Response>"); // Respuesta vacía para que Twilio la ignore
     });
 
-    // 🔥 Servimos el bot en Express
-    app.listen(PORT, () => console.log(`🚀 Servidor escuchando en el puerto ${PORT}`));
+    app.listen(PORT, () => console.log(`✅ Servidor escuchando en el puerto ${PORT}`));
 
     httpServer(+PORT);
 };
