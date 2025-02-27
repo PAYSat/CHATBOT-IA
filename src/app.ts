@@ -144,10 +144,14 @@ const main = async () => {
 
         httpInject(adapterProvider.server);
 
-        // ✅ RESPONDER INMEDIATAMENTE A TWILIO PARA EVITAR EL JSON COMO MENSAJE
-        adapterProvider.server.post("/webhook", (req, res) => {
-            console.log("📩 Mensaje recibido de Twilio:", req.body);
-            res.status(200).send(""); // 🔥 Esta línea evita que Twilio envíe el JSON como mensaje.
+        // ✅ INTERCEPTAR SOLICITUDES DE TWILIO Y RESPONDER INMEDIATAMENTE
+        adapterProvider.server.use((req, res, next) => {
+            if (req.method === "POST" && req.url === "/webhook") {
+                console.log("📩 Mensaje recibido de Twilio:", req.body);
+                res.status(200).send(""); // 🔥 Responde inmediatamente a Twilio
+            } else {
+                next();
+            }
         });
 
         httpServer(+PORT);
@@ -157,5 +161,6 @@ const main = async () => {
         process.exit(1);
     }
 };
+
 
 main();
