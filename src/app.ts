@@ -17,7 +17,7 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
-    
+
     const startOpenAI = Date.now();
     const response = await toAsk(ASSISTANT_ID, ctx.body, state);
     const endOpenAI = Date.now();
@@ -27,7 +27,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        
+
         const startTwilio = Date.now();
         await flowDynamic([{ body: cleanedChunk }]);
         const endTwilio = Date.now();
@@ -40,13 +40,13 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
  */
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
-    
+
     if (userLocks.get(userId)) {
         return; // Si está bloqueado, omitir procesamiento
     }
-    
+
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
-    
+
     while (queue.length > 0) {
         userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
@@ -113,6 +113,13 @@ const main = async () => {
     });
 
     httpInject(adapterProvider.server);
+
+    // Evitar que Twilio devuelva un JSON como mensaje en WhatsApp
+    adapterProvider.server.post("/webhook", (req, res) => {
+        res.status(200).send(""); // Responde con HTTP 200 y sin cuerpo
+    });
+
+
     httpServer(+PORT);
 };
 
