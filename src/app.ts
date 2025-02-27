@@ -9,14 +9,13 @@ import { typing } from "./utils/presence";
 
 /** Verifica si el puerto está en uso y elige uno nuevo si es necesario */
 const checkPortInUse = (port: number): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const server = net.createServer();
-
         server.once("error", (err: NodeJS.ErrnoException) => {
             if (err.code === "EADDRINUSE") {
                 resolve(true); // Puerto en uso
             } else {
-                reject(err);
+                resolve(false); // Otro error
             }
         });
 
@@ -29,19 +28,15 @@ const checkPortInUse = (port: number): Promise<boolean> => {
     });
 };
 
-
-/** Configuración inicial del puerto */
+/** Busca un puerto disponible */
 const getAvailablePort = async (): Promise<number> => {
-    let port = Number(process.env.PORT) || 3008; // Convertimos a número
-
-    if (await checkPortInUse(port)) {
+    let port = Number(process.env.PORT) || 3008;
+    while (await checkPortInUse(port)) {
         console.log(`⚠️ Puerto ${port} en uso. Buscando otro...`);
         port = Math.floor(Math.random() * (9000 - 3000) + 3000);
     }
-
     return port;
 };
-
 
 /** Procesamiento de mensajes del usuario con OpenAI */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
