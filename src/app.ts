@@ -67,7 +67,16 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
         const userId = ctx.from;
 
-        if (ctx.body && ctx.body) {
+        // 🔥 Corrección: Intentamos convertir ctx.body en JSON si es un string válido
+        let body;
+        try {
+            body = typeof ctx.body === "string" ? JSON.parse(ctx.body) : ctx.body;
+        } catch (error) {
+            body = ctx.body; // Si no es un JSON válido, lo dejamos como está
+        }
+
+        // 🔥 Ahora verificamos correctamente si es un mensaje de Twilio
+        if (body && body.ApiVersion) {
             console.log("🔍 Mensaje del webhook de Twilio detectado, ignorándolo.");
             return;
         }
