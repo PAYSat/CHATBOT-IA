@@ -109,8 +109,22 @@ const main = async () => {
         database: adapterDB,
     });
 
-    /** 🔥 Railway ya asigna el puerto, solo iniciamos BuilderBot */
-    httpServer(+PORT);
+    /** 🔥 Webhook de Twilio: Responder con XML vacío para evitar JSON en WhatsApp */
+    const express = require("express");
+    const app = express();
+    app.use(express.urlencoded({ extended: true }));
+    app.use(express.json());
+
+    app.post("/webhook", (req, res) => {
+        console.log("📩 Webhook recibido:", req.body);
+
+        // 🔥 Solución: Evitamos que Twilio devuelva JSON en WhatsApp
+        res.setHeader("Content-Type", "text/xml");
+        res.status(200).send("<Response></Response>");
+    });
+
+    httpServer(+PORT); // 🔥 Iniciamos el servidor de BuilderBot
 };
+
 
 main();
