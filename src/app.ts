@@ -43,9 +43,9 @@ const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
-        accountSid: process.env.TWILIO_ACCOUNT_SID,
-        authToken: process.env.TWILIO_AUTH_TOKEN,
-        vendorNumber: process.env.TWILIO_PHONE_NUMBER,
+        accountSid: process.env.ACCOUNT_SID,
+        authToken: process.env.AUTH_TOKEN,
+        vendorNumber: process.env.VENDOR_NUMBER,
     });
 
     // Configuración de PostgreSQL
