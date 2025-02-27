@@ -112,29 +112,33 @@ const main = async () => {
         database: adapterDB,
     });
 
-    // Endpoint para manejar las solicitudes de Twilio
-    adapterProvider.server.post('/webhook', async (req, res) => {
-        try {
-            const { Body, From } = req.body; // Extraer el cuerpo y el remitente del mensaje
-
-            // Verificar que el mensaje y el remitente estén presentes
-            if (!Body || !From) {
-                throw new Error("Faltan campos 'Body' o 'From' en la solicitud.");
-            }
-
-            // Enviar una respuesta directa al usuario
-            await adapterProvider.sendMessage(From, `Procesando tu mensaje: "${Body}"`);
-
-            // Responder a Twilio con un 200 (éxito) sin cuerpo
-            res.status(200).end();
-        } catch (error) {
-            console.error("Error en el webhook:", error.message);
-            res.status(500).end(); // Responder con un error 500 sin cuerpo
-        }
-    });
-
     httpInject(adapterProvider.server);
     httpServer(+PORT);
 };
 
 main();
+
+/**
+ * Webhook para Twilio con logs detallados
+ */
+import express from "express";
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.post("/webhook", (req, res) => {
+    console.log("📩 Webhook recibido desde Twilio:", JSON.stringify(req.body, null, 2));
+
+    // 🔥 Log detallado de la respuesta antes de enviarla
+    console.log("🛠️ Enviando respuesta vacía a Twilio para evitar JSON...");
+
+    res.setHeader("Content-Type", "text/plain");
+    res.status(200).send(" "); // Espacio en blanco para evitar respuestas automáticas
+
+    console.log("✅ Respuesta enviada correctamente.");
+});
+
+// Iniciar Express en Railway
+app.listen(PORT, () => {
+    console.log(`🚀 Servidor Express corriendo en puerto ${PORT}`);
+});
