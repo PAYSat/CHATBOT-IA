@@ -16,16 +16,14 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    await typing(ctx, provider);
+    // 🔥 Eliminamos `typing()` temporalmente
+    console.log(`📨 Mensaje recibido de ${ctx.from}: ${ctx.body}`);
 
-    console.log(`📨 Mensaje recibido de ${ctx.from}: ${ctx.body}`); // 🔥 Log para verificar mensajes entrantes
-    
     const startOpenAI = Date.now();
     const response = await toAsk(ASSISTANT_ID, ctx.body, state);
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    // Divide la respuesta en fragmentos y los envía secuencialmente
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
@@ -36,6 +34,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
 };
+
 
 /**
  * Maneja la cola de mensajes para cada usuario.
