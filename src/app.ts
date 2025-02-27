@@ -112,12 +112,29 @@ const main = async () => {
         database: adapterDB,
     });
 
-    httpInject(adapterProvider.server);
+    // Endpoint para manejar las solicitudes de Twilio
+    adapterProvider.server.post('/webhook', async (req, res) => {
+        try {
+            const { Body, From } = req.body; // Extraer el cuerpo y el remitente del mensaje
 
-    // 🚀 Corrección clave: Evitar error de puerto en Railway
-    
+            // Verificar que el mensaje y el remitente estén presentes
+            if (!Body || !From) {
+                throw new Error("Faltan campos 'Body' o 'From' en la solicitud.");
+            }
+
+            // Enviar una respuesta directa al usuario
+            await adapterProvider.sendMessage(From, `Procesando tu mensaje: "${Body}"`);
+
+            // Responder a Twilio con un 200 (éxito) sin cuerpo
+            res.status(200).end();
+        } catch (error) {
+            console.error("Error en el webhook:", error.message);
+            res.status(500).end(); // Responder con un error 500 sin cuerpo
+        }
+    });
+
+    httpInject(adapterProvider.server);
+    httpServer(+PORT);
 };
 
-// Iniciar el bot
-main().catch((error) => console.error("❌ Error iniciando el bot:", error));
-
+main();
