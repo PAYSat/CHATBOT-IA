@@ -69,22 +69,35 @@ const handleQueue = async (userId) => {
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
-        const userId = ctx.from; // Identificador único por usuario
+        console.log("📩 Payload recibido en welcomeFlow:", JSON.stringify(ctx, null, 2));
+
+        let userMessage;
+        let userId;
+
+        if (ctx.Body) {
+            userMessage = ctx.Body;  // Extraer correctamente el mensaje
+            userId = ctx.From;       // Extraer el número de WhatsApp del usuario
+        } else {
+            console.error("⚠️ Error: ctx.Body no está presente en el payload.");
+            return;  // No seguir si el mensaje no es válido
+        }
+
+        console.log(`📥 Mensaje de ${userId}:`, userMessage);
 
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
         }
 
         const queue = userQueues.get(userId);
-        queue.push({ ctx, flowDynamic, state, provider });
+        queue.push({ ctx: { body: userMessage, from: userId }, flowDynamic, state, provider });
 
-        // Si este es el único mensaje en la cola, procesarlo inmediatamente
+        console.log(`📌 Mensaje agregado a la cola de ${userId}, total en cola: ${queue.length}`);
+
         if (!userLocks.get(userId) && queue.length === 1) {
             await handleQueue(userId);
         }
-        console.log("📩 Payload recibido en welcomeFlow:", JSON.stringify(ctx, null, 2));
-
     });
+
 
         
 /**
