@@ -3,10 +3,24 @@ import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@buil
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk } from "@builderbot-plugins/openai-assistants";
+import express from "express"; // ✅ Usamos import en lugar de require
 import { typing } from "./utils/presence";
 
 /** Puerto asignado por Railway */
 const PORT = Number(process.env.PORT) || 3008;
+
+/** Webhook de Twilio - Evita que se reenvíe JSON en WhatsApp */
+const app = express();
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
+app.post("/webhook", (req, res) => {
+    console.log("📩 Webhook recibido:", req.body);
+
+    // 🔥 Solución: Evitamos que Twilio devuelva JSON en WhatsApp
+    res.setHeader("Content-Type", "text/xml");
+    res.status(200).send("<Response></Response>");
+});
 
 /** Procesamiento de mensajes del usuario con OpenAI */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
@@ -28,32 +42,6 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     }
 };
 
-/** Manejo de colas de usuarios */
-const userQueues = new Map();
-const userLocks = new Map();
-
-const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
-    if (userLocks.get(userId)) return;
-
-    console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
-
-    while (queue.length > 0) {
-        userLocks.set(userId, true);
-        const { ctx, flowDynamic, state, provider } = queue.shift();
-        try {
-            await processUserMessage(ctx, { flowDynamic, state, provider });
-        } catch (error) {
-            console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
-        } finally {
-            userLocks.set(userId, false);
-        }
-    }
-
-    userLocks.delete(userId);
-    userQueues.delete(userId);
-};
-
 /** Flujo de bienvenida optimizado */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
@@ -69,17 +57,6 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         if (body && body.ApiVersion) {
             console.log("🔍 Mensaje automático de Twilio detectado, ignorándolo.");
             return;
-        }
-
-        if (!userQueues.has(userId)) {
-            userQueues.set(userId, []);
-        }
-
-        const queue = userQueues.get(userId);
-        queue.push({ ctx, flowDynamic, state, provider });
-
-        if (!userLocks.get(userId) && queue.length === 1) {
-            await handleQueue(userId);
         }
     });
 
@@ -109,22 +86,7 @@ const main = async () => {
         database: adapterDB,
     });
 
-    /** 🔥 Webhook de Twilio: Responder con XML vacío para evitar JSON en WhatsApp */
-    const express = require("express");
-    const app = express();
-    app.use(express.urlencoded({ extended: true }));
-    app.use(express.json());
-
-    app.post("/webhook", (req, res) => {
-        console.log("📩 Webhook recibido:", req.body);
-
-        // 🔥 Solución: Evitamos que Twilio devuelva JSON en WhatsApp
-        res.setHeader("Content-Type", "text/xml");
-        res.status(200).send("<Response></Response>");
-    });
-
-    httpServer(+PORT); // 🔥 Iniciamos el servidor de BuilderBot
+    httpServer(+PORT); // 🔥 Iniciamos el servidor correctamente
 };
-
 
 main();
