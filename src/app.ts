@@ -118,9 +118,9 @@ const main = async () => {
     adapterProvider.server.post("/webhook", (req, res) => {
         console.log("📩 Webhook recibido desde Twilio:", req.body);
     
-        res.status(200).json(null); // Enviar null explícito para evitar respuestas JSON automáticas
+        // Asegurar que no se devuelva el JSON automáticamente
+        res.status(204).send(); // 204 No Content evita cualquier contenido en la respuesta
     });
-
 
     httpServer(+PORT);
 };
