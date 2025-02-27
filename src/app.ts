@@ -1,45 +1,92 @@
 import "dotenv/config";
-import { createBot, createProvider, createFlow, addKeyword, EVENTS } from '@builderbot/bot';
-import { PostgreSQLAdapter } from "@builderbot/database-postgres";; // Adaptador de PostgreSQL
-import { TwilioProvider } from '@builderbot/provider-twilio';
-import { toAsk } from "@builderbot-plugins/openai-assistants";
-import express from 'express';
+import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
+import { PostgreSQLAdapter } from "@builderbot/database-postgres";
+import { TwilioProvider } from "@builderbot/provider-twilio";
+import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
+import { typing } from "./utils/presence";
 
+/** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
-const ASSISTANT_ID = process.env.ASSISTANT_ID ?? '';
+/** ID del asistente de OpenAI */
+const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
+const userQueues = new Map();
+const userLocks = new Map(); // Mecanismo de bloqueo
 
 /**
- * Función para procesar el mensaje del usuario.
+ * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
-const processUserMessage = async (ctx, { flowDynamic, state }) => {
+const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
+    await typing(ctx, provider);
+    
+    const startOpenAI = Date.now();
     const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const endOpenAI = Date.now();
+    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    // Dividir la respuesta en partes y enviarlas secuencialmente
+    // Divide la respuesta en fragmentos y los envía secuencialmente
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+        
+        const startTwilio = Date.now();
         await flowDynamic([{ body: cleanedChunk }]);
+        const endTwilio = Date.now();
+        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
 };
 
 /**
- * Flujo de bienvenida.
+ * Maneja la cola de mensajes para cada usuario.
+ */
+const handleQueue = async (userId) => {
+    const queue = userQueues.get(userId);
+    
+    if (userLocks.get(userId)) {
+        return; // Si está bloqueado, omitir procesamiento
+    }
+    
+    console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
+    
+    while (queue.length > 0) {
+        userLocks.set(userId, true); // Bloquear la cola
+        const { ctx, flowDynamic, state, provider } = queue.shift();
+        try {
+            await processUserMessage(ctx, { flowDynamic, state, provider });
+        } catch (error) {
+            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+        } finally {
+            userLocks.set(userId, false); // Liberar el bloqueo
+        }
+    }
+
+    userLocks.delete(userId); // Eliminar bloqueo una vez procesados todos los mensajes
+    userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
+};
+
+/**
+ * Flujo de bienvenida que maneja las respuestas del asistente de IA
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
-    .addAction(async (ctx, { flowDynamic, state }) => {
-        await processUserMessage(ctx, { flowDynamic, state });
+    .addAction(async (ctx, { flowDynamic, state, provider }) => {
+        const userId = ctx.from; // Identificador único por usuario
+
+        if (!userQueues.has(userId)) {
+            userQueues.set(userId, []);
+        }
+
+        const queue = userQueues.get(userId);
+        queue.push({ ctx, flowDynamic, state, provider });
+
+        // Si este es el único mensaje en la cola, procesarlo inmediatamente
+        if (!userLocks.get(userId) && queue.length === 1) {
+            await handleQueue(userId);
+        }
     });
 
 /**
- * Función principal.
+ * Función principal que configura e inicia el bot
  */
 const main = async () => {
-    const app = express(); // Crear una instancia de Express
-
-    // Middleware para parsear el cuerpo de las solicitudes entrantes
-    app.use(express.json());
-    app.use(express.urlencoded({ extended: true }));
-
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -48,14 +95,16 @@ const main = async () => {
         vendorNumber: process.env.VENDOR_NUMBER,
     });
 
-    // Configuración de PostgreSQL
+    const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        user: process.env.DB_USER,       // Usuario de la base de datos
-        host: process.env.DB_HOST,       // Host de la base de datos
-        database: process.env.DB_NAME,   // Nombre de la base de datos
-        password: process.env.DB_PASSWORD, // Contraseña de la base de datos
-        port: Number(process.env.POSTGRES_DB_PORT) // Puerto de PostgreSQL (por defecto 5432)
+        host: process.env.POSTGRES_DB_HOST,         // Host proporcionado por Railway
+        user: process.env.POSTGRES_DB_USER,         // Usuario proporcionado por Railway
+        password: process.env.POSTGRES_DB_PASSWORD, // Contraseña proporcionada por Railway
+        database: process.env.POSTGRES_DB_NAME,     // Nombre de la base de datos
+        port: Number(process.env.POSTGRES_DB_PORT)
     });
+    const endDB = Date.now();
+    console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
     const { httpServer } = await createBot({
         flow: adapterFlow,
@@ -63,29 +112,8 @@ const main = async () => {
         database: adapterDB,
     });
 
-    // Endpoint para manejar las solicitudes de Twilio
-    app.post('/webhook', async (req, res) => {
-        try {
-            const { Body, From } = req.body; // Extraer el cuerpo y el remitente del mensaje
-
-            // Verificar que el mensaje y el remitente estén presentes
-            if (!Body || !From) {
-                throw new Error("Faltan campos 'Body' o 'From' en la solicitud.");
-            }
-
-            // Enviar una respuesta directa al usuario
-            await adapterProvider.sendMessage(From, `Procesando tu mensaje: "${Body}"`);
-
-            // Responder a Twilio con un 200 (éxito)
-            res.status(200).end();
-        } catch (error) {
-            console.error("Error en el webhook:", error.message);
-            res.status(500).json({ error: "Error interno del servidor" });
-        }
-    });
-
-    httpServer(app); // Pasar la instancia de Express al servidor HTTP
-    app.listen(PORT, () => console.log(`Servidor escuchando en el puerto ${PORT}`));
+    httpInject(adapterProvider.server);
+    httpServer(+PORT);
 };
 
 main();
