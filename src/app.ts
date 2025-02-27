@@ -4,6 +4,7 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import { Console } from "console";
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -81,8 +82,11 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         if (!userLocks.get(userId) && queue.length === 1) {
             await handleQueue(userId);
         }
+        console.log("📩 Payload recibido en welcomeFlow:", JSON.stringify(ctx, null, 2));
+
     });
 
+        
 /**
  * Función principal que configura e inicia el bot
  */
