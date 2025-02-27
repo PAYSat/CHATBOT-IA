@@ -10,32 +10,50 @@ const PORT = process.env.PORT ?? 3008;
 /** ID del asistente de OpenAI */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
-const userLocks = new Map(); // Mecanismo de bloqueo
+const userLocks = new Map();
 
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
-    
-    try {
-        const startOpenAI = Date.now();
-        const response = await toAsk(ASSISTANT_ID, ctx.body, state);
-        const endOpenAI = Date.now();
-        console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-        // Divide la respuesta en fragmentos y los envía secuencialmente
-        const chunks = response.split(/\n\n+/);
-        for (const chunk of chunks) {
-            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+    let maxRetries = 3;
+    let retries = 0;
+    let response = "";
 
-            const startTwilio = Date.now();
-            await flowDynamic([{ body: cleanedChunk }]);
-            const endTwilio = Date.now();
-            console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+    while (retries < maxRetries) {
+        try {
+            console.log(`🔄 Intento ${retries + 1} de ${maxRetries} para OpenAI...`);
+
+            const startOpenAI = Date.now();
+            response = await toAsk(ASSISTANT_ID, ctx.body, state);
+            const endOpenAI = Date.now();
+
+            console.log(`✅ OpenAI respondió en ${(endOpenAI - startOpenAI) / 1000} segundos`);
+            break;
+        } catch (error) {
+            console.error(`❌ Error en OpenAI (Intento ${retries + 1}):`, error.message);
+
+            if (error.code === "ECONNRESET" || error.code === "ETIMEDOUT") {
+                retries++;
+                console.log("♻️ Reintentando conexión con OpenAI...");
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+            } else {
+                break;
+            }
         }
-    } catch (error) {
-        console.error("❌ Error en OpenAI:", error);
+    }
+
+    if (!response) {
+        console.log("🚨 OpenAI no respondió después de varios intentos.");
+        response = "Lo siento, no puedo responder en este momento. Inténtalo más tarde.";
+    }
+
+    const chunks = response.split(/\n\n+/);
+    for (const chunk of chunks) {
+        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+        await flowDynamic([{ body: cleanedChunk }]);
     }
 };
 
@@ -46,21 +64,21 @@ const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
 
     if (userLocks.get(userId)) {
-        return; // Si está bloqueado, omitir procesamiento
+        return;
     }
 
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
 
     while (queue.length > 0) {
-        userLocks.set(userId, true); // Bloquear la cola
+        userLocks.set(userId, true);
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
             await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
             console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
-            queue.unshift({ ctx, flowDynamic, state, provider }); // Volver a ponerlo en la cola para reintentar
+            queue.unshift({ ctx, flowDynamic, state, provider });
         } finally {
-            userLocks.set(userId, false); // Liberar el bloqueo
+            userLocks.set(userId, false);
         }
     }
 
@@ -71,7 +89,7 @@ const handleQueue = async (userId) => {
 };
 
 /**
- * Flujo de bienvenida que maneja las respuestas del asistente de IA
+ * Flujo de bienvenida que maneja las respuestas del asistente de IA.
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
@@ -84,17 +102,18 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         const queue = userQueues.get(userId);
         queue.push({ ctx, flowDynamic, state, provider });
 
-        // Esperar hasta que Twilio y OpenAI respondan antes de enviar JSON
-        if (!userLocks.get(userId) && queue.length === 1) {
-            await handleQueue(userId);
-        }
+        // ✅ Responder inmediatamente a Twilio con una respuesta vacía antes de procesar OpenAI
+        setTimeout(() => {
+            if (!userLocks.get(userId) && queue.length === 1) {
+                handleQueue(userId);
+            }
+        }, 500);
 
-        // Evitar respuesta automática de Twilio en formato JSON prematuro
-        return new Promise((resolve) => setTimeout(resolve, 1000));
+        return ""; // 🔥 Esta línea evita que Twilio envíe JSON como mensaje.
     });
 
 /**
- * Función principal que configura e inicia el bot
+ * Función principal que configura e inicia el bot.
  */
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
@@ -124,10 +143,18 @@ const main = async () => {
         });
 
         httpInject(adapterProvider.server);
+
+        // ✅ RESPONDER INMEDIATAMENTE A TWILIO PARA EVITAR EL JSON COMO MENSAJE
+        adapterProvider.server.post("/webhook", (req, res) => {
+            console.log("📩 Mensaje recibido de Twilio:", req.body);
+            res.status(200).send(""); // 🔥 Esta línea evita que Twilio envíe el JSON como mensaje.
+        });
+
         httpServer(+PORT);
+        console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
     } catch (error) {
         console.error("❌ Error al conectar a PostgreSQL:", error);
-        process.exit(1); // Terminar si la conexión a la base de datos falla
+        process.exit(1);
     }
 };
 
