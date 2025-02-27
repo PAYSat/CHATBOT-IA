@@ -122,6 +122,8 @@ const main = async () => {
                 throw new Error("Faltan campos 'Body' o 'From' en la solicitud.");
             }
 
+            console.log("📨 Mensaje recibido:", { Body, From });
+
             // Enviar una respuesta directa al usuario
             await adapterProvider.sendMessage(From, `Procesando tu mensaje: "${Body}"`);
 
