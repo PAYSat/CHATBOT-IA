@@ -102,7 +102,7 @@ app.post("/webhook", async (req, res) => {
 
     res.type("text/xml").send(twiml.toString()); // Evita devolver JSON en WhatsApp
 
-    // Crear un objeto state con un método `get`
+    // Crear un objeto state con los métodos necesarios
     const state = {
         get: (key) => {
             // Lógica para recuperar valores del estado
@@ -110,6 +110,10 @@ app.post("/webhook", async (req, res) => {
         },
         set: (key, value) => {
             // Lógica para guardar valores en el estado
+        },
+        update: (data) => {
+            // Lógica para actualizar el estado
+            console.log("Actualizando estado:", data);
         },
     };
 
