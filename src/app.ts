@@ -24,6 +24,10 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
+    if (!provider) {
+        throw new Error("Provider no está definido.");
+    }
+
     await typing(ctx, provider);
 
     const startOpenAI = Date.now();
