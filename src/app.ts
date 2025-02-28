@@ -100,7 +100,7 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
 
-    res.type("text/xml").send(twiml.toString()); // Evita devolver JSON en WhatsApp
+    res.type("text/xml").send(twiml.toString()); // Respuesta vacía para Twilio
 
     // Crear un objeto state con los métodos necesarios
     const state = {
@@ -117,22 +117,26 @@ app.post("/webhook", async (req, res) => {
         },
     };
 
-    // Crear una función flowDynamic simulada
+    // Crear una función flowDynamic que use el provider para enviar mensajes
     const flowDynamic = async (messages) => {
-        // Lógica para enviar mensajes
-        console.log("Enviando mensajes:", messages);
-    };
-
-    // Crear un objeto provider simulado
-    const provider = {
-        // Lógica del proveedor (Twilio en este caso)
+        for (const message of messages) {
+            await adapterProvider.sendText(numeroRemitente, message.body); // Enviar mensaje a través de Twilio
+            console.log("Mensaje enviado a WhatsApp:", message.body);
+        }
     };
 
     // Llamar a processUserMessage con los parámetros correctos
     await processUserMessage(
         { body: mensajeEntrante, from: numeroRemitente },
-        { flowDynamic, state, provider }
+        { flowDynamic, state, provider: adapterProvider }
     );
+});
+
+// Crear el adapterProvider fuera de la función main
+const adapterProvider = createProvider(TwilioProvider, {
+    accountSid: process.env.ACCOUNT_SID,
+    authToken: process.env.AUTH_TOKEN,
+    vendorNumber: process.env.VENDOR_NUMBER,
 });
 
 /**
@@ -141,18 +145,12 @@ app.post("/webhook", async (req, res) => {
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
 
-    const adapterProvider = createProvider(TwilioProvider, {
-        accountSid: process.env.ACCOUNT_SID,
-        authToken: process.env.AUTH_TOKEN,
-        vendorNumber: process.env.VENDOR_NUMBER,
-    });
-
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        host: process.env.POSTGRES_DB_HOST, // Host proporcionado por Railway
-        user: process.env.POSTGRES_DB_USER, // Usuario proporcionado por Railway
-        password: process.env.POSTGRES_DB_PASSWORD, // Contraseña proporcionada por Railway
-        database: process.env.POSTGRES_DB_NAME, // Nombre de la base de datos
+        host: process.env.POSTGRES_DB_HOST,
+        user: process.env.POSTGRES_DB_USER,
+        password: process.env.POSTGRES_DB_PASSWORD,
+        database: process.env.POSTGRES_DB_NAME,
         port: Number(process.env.POSTGRES_DB_PORT),
     });
     const endDB = Date.now();
