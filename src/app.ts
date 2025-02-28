@@ -95,13 +95,14 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
  */
 app.post("/webhook", async (req, res) => {
     const twiml = new twilio.twiml.MessagingResponse();
-    
-    console.log("📩 Mensaje recibido:", req.body);
-    
-    // Enviar una respuesta vacía a Twilio para evitar errores de procesamiento
-    res.type("text/xml").send(twiml.toString());
 
-    // Procesar el mensaje recibido en el bot
+    console.log("📩 Mensaje recibido:", req.body);
+
+    // Enviar una respuesta TwiML vacía a Twilio para confirmar la recepción
+    res.set("Content-Type", "text/xml");
+    res.status(200).send(twiml.toString());
+
+    // Procesar el mensaje en el bot
     processUserMessage(req.body.From, { flowDynamic: null, state: null, provider: null });
 });
 
@@ -134,9 +135,12 @@ const main = async () => {
         database: adapterDB,
     });
 
-    // Inyectar el servidor HTTP para manejar Twilio correctamente
-    httpInject(adapterProvider.server);
+    // 🔥 Inyectar Express dentro del servidor de BuilderBot
+    httpInject(app);
+
+    // Iniciar el servidor HTTP en el puerto definido
     httpServer(+PORT);
+    console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
 };
 
 // Iniciar el bot
