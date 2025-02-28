@@ -132,8 +132,12 @@ app.post("/webhook", async (req, res) => {
     );
 });
 
-
-
+// Crear el adapterProvider fuera de la función main
+const adapterProvider = createProvider(TwilioProvider, {
+    accountSid: process.env.ACCOUNT_SID,
+    authToken: process.env.AUTH_TOKEN,
+    vendorNumber: process.env.VENDOR_NUMBER,
+});
 
 /**
  * Función principal que configura e inicia el bot
@@ -151,13 +155,6 @@ const main = async () => {
     });
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
-
-
-    const adapterProvider = createProvider(TwilioProvider, {
-        accountSid: process.env.ACCOUNT_SID,
-        authToken: process.env.AUTH_TOKEN,
-        vendorNumber: process.env.VENDOR_NUMBER,
-    });
 
     const { httpServer } = await createBot({
         flow: adapterFlow,
