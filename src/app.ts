@@ -114,16 +114,15 @@ app.post("/webhook", async (req, res) => {
         update: (data) => console.log("Actualizando estado:", data),
     };
 
-    const flowDynamic = async (messages) => {
+    const flowDynamicWrapper = async (messages) => {
         for (const message of messages) {
-            await flowDynamic([{ body: message.body }]); // Se usa `flowDynamic()`, no `send()`
-            console.log("✅ Mensaje enviado a WhatsApp:", message.body);
+            console.log("✅ Mensaje listo para enviar:", message.body);
         }
     };
 
     await processUserMessage(
         { body: mensajeEntrante, from: numeroRemitente },
-        { flowDynamic, state, provider: adapterProvider }
+        { flowDynamic: flowDynamicWrapper, state, provider: adapterProvider }
     );
 });
 
