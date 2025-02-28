@@ -59,23 +59,35 @@ app.post("/webhook", async (req, res) => {
 // 🔹 Manejo de colas
 
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    await typing(ctx, provider ?? adapterProvider); // Si `provider` es undefined, usa `adapterProvider`
+    await typing(ctx, provider);
+
+    // ✅ Si `state` es `null`, creamos un estado vacío con métodos válidos
+    const safeState = state ?? {
+        get: () => null,
+        update: () => {},
+        getMyState: () => null,
+        clear: () => {}
+    };
 
     const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const response = await toAsk(ASSISTANT_ID, ctx.body, safeState);
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
+    // 🔹 Usar `flowDynamic()` en lugar de `provider.sendMessage()`
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-
         const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }], provider ?? adapterProvider); // ✅ Asegurar que `provider` nunca sea undefined
+        
+        // ✅ Volvemos a usar `flowDynamic()` como en el código original
+        await flowDynamic([{ body: cleanedChunk }]);
+
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
 };
+
 
 // 🔹 Asegurar que `provider` nunca sea undefined en `handleQueue()`
 const handleQueue = async (userId) => {
