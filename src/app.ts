@@ -4,125 +4,27 @@ import twilio from "twilio";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
-import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
+import { toAsk } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import http from "http"; // Importar el módulo http
 
 const PORT = process.env.PORT ?? 3008;
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
-
 const userQueues = new Map();
 const userLocks = new Map();
 
-// 🔹 Inicializar TwilioProvider
+// Crear una instancia de Express
+const app = express();
+app.use(express.urlencoded({ extended: false })); // Middleware para parsear el cuerpo de las solicitudes
+
+// Configura el proveedor de Twilio
 const adapterProvider = createProvider(TwilioProvider, {
     accountSid: process.env.ACCOUNT_SID,
     authToken: process.env.AUTH_TOKEN,
     vendorNumber: process.env.VENDOR_NUMBER,
 });
 
-// 🔹 Crear el servidor Express
-const app = express();
-app.use(express.urlencoded({ extended: false }));
-
-// 🔹 Webhook de Twilio
-app.post("/webhook", async (req, res) => {
-    const twiml = new twilio.twiml.MessagingResponse();
-    const mensajeEntrante = req.body.Body;
-    const numeroRemitente = req.body.From;
-
-    console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
-
-    try {
-        // Responder rápidamente para evitar que WhatsApp se quede esperando un JSON
-        res.type("text/xml").send(twiml.toString());
-
-        // Agregar el mensaje a la cola y procesarlo
-        if (!userQueues.has(numeroRemitente)) {
-            userQueues.set(numeroRemitente, []);
-        }
-
-        const queue = userQueues.get(numeroRemitente);
-        queue.push({
-            ctx: { from: numeroRemitente, body: mensajeEntrante },
-            flowDynamic: adapterProvider.sendMessage,
-            state: null,
-            provider: adapterProvider,
-        });
-
-        if (!userLocks.get(numeroRemitente) && queue.length === 1) {
-            await handleQueue(numeroRemitente);
-        }
-    } catch (error) {
-        console.error(`❌ Error procesando el webhook:`, error);
-        res.status(500).send('Internal Server Error');
-    }
-});
-
-// 🔹 Manejo de colas
-const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    await typing(ctx, provider);
-
-    const safeState = state ?? {
-        get: () => null,
-        update: () => {},
-        getMyState: () => null,
-        clear: () => {}
-    };
-
-    try {
-        const startOpenAI = Date.now();
-        const response = await toAsk(ASSISTANT_ID, ctx.body, safeState);
-        const endOpenAI = Date.now();
-        console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
-
-        const chunks = response.split(/\n\n+/);
-        for (const chunk of chunks) {
-            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-            const startTwilio = Date.now();
-            await flowDynamic([{ body: cleanedChunk }]);
-            const endTwilio = Date.now();
-            console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
-        }
-    } catch (error) {
-        console.error(`❌ Error procesando mensaje para el usuario ${ctx.from}:`, error);
-    }
-};
-
-// 🔹 Asegurar que `provider` nunca sea undefined en `handleQueue()`
-const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
-    if (userLocks.get(userId)) return;
-
-    console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
-
-    while (queue.length > 0) {
-        userLocks.set(userId, true);
-        let { ctx, flowDynamic, state, provider } = queue.shift();
-
-        const safeState = state ?? {
-            get: () => null,
-            update: () => {},
-            getMyState: () => null,
-            clear: () => {}
-        };
-
-        // Asegurar que `provider` tenga valor
-        provider = provider ?? adapterProvider;
-
-        try {
-            await processUserMessage(ctx, { flowDynamic, state: safeState, provider });
-        } catch (error) {
-            console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
-        } finally {
-            userLocks.set(userId, false);
-        }
-    }
-
-    userLocks.delete(userId);
-    userQueues.delete(userId);
-};
-
-// 🔹 Flujo de bienvenida
+// Configura el flujo de bienvenida
 const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynamic, state, provider }) => {
     const userId = ctx.from;
 
@@ -138,8 +40,76 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
     }
 });
 
-// 🔹 Conectar a la base de datos PostgreSQL
-const setupDatabase = () => {
+// Función para procesar mensajes del usuario
+const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
+    await typing(ctx, provider);
+    
+    const startOpenAI = Date.now();
+    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const endOpenAI = Date.now();
+    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
+
+    // Divide la respuesta en fragmentos y los envía secuencialmente
+    const chunks = response.split(/\n\n+/);
+    let fullResponse = "";
+    for (const chunk of chunks) {
+        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+        fullResponse += cleanedChunk + "\n\n";
+    }
+
+    return fullResponse.trim();
+};
+
+// Función para manejar la cola de mensajes
+const handleQueue = async (userId) => {
+    const queue = userQueues.get(userId);
+    if (userLocks.get(userId)) return;
+
+    console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
+
+    while (queue.length > 0) {
+        userLocks.set(userId, true); // Bloquear la cola
+        const { ctx, flowDynamic, state, provider } = queue.shift();
+        try {
+            await processUserMessage(ctx, { flowDynamic, state, provider });
+        } catch (error) {
+            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+        } finally {
+            userLocks.set(userId, false); // Liberar el bloqueo
+        }
+    }
+    userLocks.delete(userId);
+    userQueues.delete(userId);
+};
+
+// Ruta personalizada para el webhook de Twilio
+app.post("/webhook", async (req, res) => {
+    const twiml = new twilio.twiml.MessagingResponse();
+    const mensajeEntrante = req.body.Body;
+    const numeroRemitente = req.body.From;
+
+    console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
+
+    res.type("text/xml").send(twiml.toString()); // Evita devolver JSON en WhatsApp
+
+    // Procesar el mensaje y enviar la respuesta
+    const response = await processUserMessage({ body: mensajeEntrante, from: numeroRemitente }, { flowDynamic: null, state: null, provider: adapterProvider });
+
+    // Enviar la respuesta al usuario
+    if (response) {
+        await adapterProvider.sendMessage(numeroRemitente, response);
+    }
+});
+
+// Otras rutas personalizadas (si las necesitas)
+app.get("/status", (req, res) => {
+    res.send("El servidor está en funcionamiento 🚀");
+});
+
+// Función principal
+const main = async () => {
+    const adapterFlow = createFlow([welcomeFlow]);
+
     const adapterDB = new PostgreSQLAdapter({
         host: process.env.POSTGRES_DB_HOST,
         user: process.env.POSTGRES_DB_USER,
@@ -148,35 +118,25 @@ const setupDatabase = () => {
         port: Number(process.env.POSTGRES_DB_PORT),
     });
 
-    console.log("✅ Base de datos conectada correctamente");
-    return adapterDB;
-};
+    // Crear el bot y obtener el httpServer
+    const { httpServer } = await createBot({
+        flow: adapterFlow,
+        provider: adapterProvider,
+        database: adapterDB,
+    });
 
-// 🔹 Inicializar el bot y unirlo con Express
-const main = async () => {
-    console.log("🔧 Iniciando el bot...");
+    // Crear un servidor HTTP manualmente
+    const server = http.createServer(app);
 
-    const adapterFlow = createFlow([welcomeFlow]);
+    // Integrar el servidor HTTP de createBot con Express
+    server.on("request", (req, res) => {
+        app(req, res); // Pasar las solicitudes a la aplicación Express
+    });
 
-    try {
-        const adapterDB = setupDatabase(); // Crear el adaptador de base de datos
-
-        const { httpServer } = await createBot({
-            flow: adapterFlow,
-            provider: adapterProvider,
-            database: adapterDB,
-        });
-
-        console.log("✅ BuilderBot se ha inicializado correctamente");
-
-        // 🔹 Integrar Express con BuilderBot
-        httpInject(app);
-        app.use(httpServer);
-
-        console.log(`🚀 Servidor WhatsApp corriendo en el puerto ${PORT}`);
-    } catch (error) {
-        console.error("❌ Error iniciando el bot:", error);
-    }
+    // Iniciar el servidor
+    server.listen(PORT, () => {
+        console.log(`🚀 Servidor WhatsApp ejecutándose en el puerto ${PORT}`);
+    });
 };
 
 main();
