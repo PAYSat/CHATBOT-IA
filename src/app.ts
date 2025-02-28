@@ -8,7 +8,6 @@ import express from "express";
 import twilio from "twilio";
 
 const app = express();
-
 app.use(express.urlencoded({ extended: false }));
 
 /** Puerto en el que se ejecutará el servidor */
@@ -105,26 +104,36 @@ app.post("/webhook", async (req, res) => {
 
     res.type("text/xml").send(twiml.toString()); // Respuesta vacía para Twilio
 
+    if (!adapterProvider) {
+        console.error("❌ ERROR: `adapterProvider` no está definido aún.");
+        return res.status(500).send("Error interno: `adapterProvider` no está inicializado.");
+    }
+
+    if (typeof adapterProvider.sendMessage !== "function") {
+        console.error("❌ ERROR: `sendMessage` no está definido en `adapterProvider`.");
+        return res.status(500).send("Error interno: `sendMessage` no es una función válida.");
+    }
+
     // Crear un objeto state con los métodos necesarios
     const state = {
-        get: (key) => {
-            // Lógica para recuperar valores del estado
-            return null; // Esto es un placeholder, debes implementar la lógica real
-        },
-        set: (key, value) => {
-            // Lógica para guardar valores en el estado
-        },
-        update: (data) => {
-            // Lógica para actualizar el estado
-            console.log("Actualizando estado:", data);
-        },
+        get: (key) => null, // Placeholder
+        set: (key, value) => {},
+        update: (data) => console.log("Actualizando estado:", data),
     };
 
-    // Crear una función flowDynamic que use el provider para enviar mensajes
+    // Crear una función flowDynamic para enviar mensajes
     const flowDynamic = async (messages) => {
         for (const message of messages) {
-            await adapterProvider.sendMessage(numeroRemitente, message.body, {}); // Usar sendMessage con opciones vacías
-            console.log("Mensaje enviado a WhatsApp:", message.body);
+            try {
+                await adapterProvider.vendor.twilio.messages.create({
+                    body: message.body,
+                    from: process.env.VENDOR_NUMBER,
+                    to: numeroRemitente,
+                });
+                console.log("✅ Mensaje enviado a WhatsApp:", message.body);
+            } catch (error) {
+                console.error("❌ Error enviando mensaje:", error);
+            }
         }
     };
 
@@ -147,6 +156,9 @@ const main = async () => {
         authToken: process.env.AUTH_TOKEN,
         vendorNumber: process.env.VENDOR_NUMBER,
     });
+
+    console.log("✅ Twilio Provider Inicializado:", adapterProvider);
+    console.log("🛠 Métodos disponibles en `adapterProvider`:", Object.keys(adapterProvider));
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
