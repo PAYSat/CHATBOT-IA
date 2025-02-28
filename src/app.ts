@@ -78,12 +78,13 @@ const main = async () => {
     app.post("/webhook", validateTwilioRequest, (req, res) => {
         console.log("📩 Mensaje recibido de Twilio:", req.body);
     
-        // Crea la respuesta en formato TwiML
+        // Crear la respuesta en formato TwiML
         const response = new MessagingResponse();
         response.message("Recibimos tu mensaje, estamos procesándolo...");
     
-        // Envía la respuesta a Twilio en formato XML
-        res.type("text/xml").send(response.toString());
+        // Enviar la respuesta como XML
+        res.setHeader("Content-Type", "text/xml");
+        res.status(200).send(response.toString());
     });
     
     const adapterProvider = createProvider(TwilioProvider, {
