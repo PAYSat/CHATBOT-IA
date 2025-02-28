@@ -109,9 +109,9 @@ app.post("/webhook", async (req, res) => {
         return res.status(500).send("Error interno: `adapterProvider` no está inicializado.");
     }
 
-    if (typeof adapterProvider.sendMessage !== "function") {
-        console.error("❌ ERROR: `sendMessage` no está definido en `adapterProvider`.");
-        return res.status(500).send("Error interno: `sendMessage` no es una función válida.");
+    if (typeof adapterProvider.send !== "function") {
+        console.error("❌ ERROR: `send` no está definido en `adapterProvider`.");
+        return res.status(500).send("Error interno: `send` no es una función válida.");
     }
 
     // Crear un objeto state con los métodos necesarios
@@ -125,7 +125,7 @@ app.post("/webhook", async (req, res) => {
     const flowDynamic = async (messages) => {
         for (const message of messages) {
             try {
-                await adapterProvider.sendMessage(numeroRemitente, message.body, {});
+                await adapterProvider.send(numeroRemitente, message.body);
                 console.log("✅ Mensaje enviado a WhatsApp:", message.body);
             } catch (error) {
                 console.error("❌ Error enviando mensaje:", error);
