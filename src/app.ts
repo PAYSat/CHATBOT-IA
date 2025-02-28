@@ -12,20 +12,20 @@ const PORT = process.env.PORT ?? 3008;
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
 const userLocks = new Map();
-const userStates = new Map(); // Add a map to store states for each user
+const userStates = new Map(); // Mapa para almacenar estados para cada usuario
 
-// Create Express instance
+// Crear instancia de Express
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-// Configure Twilio provider
+// Configurar proveedor de Twilio
 const adapterProvider = new TwilioProvider({
     accountSid: process.env.ACCOUNT_SID,
     authToken: process.env.AUTH_TOKEN,
     vendorNumber: process.env.VENDOR_NUMBER,
 });
 
-// Configure welcome flow
+// Configurar flujo de bienvenida
 const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynamic, state, provider }) => {
     const userId = ctx.from;
 
@@ -34,7 +34,7 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
     }
     
     if (!userStates.has(userId)) {
-        userStates.set(userId, state); // Store the state object for this user
+        userStates.set(userId, state); // Almacenar el objeto state para este usuario
     }
 
     const queue = userQueues.get(userId);
@@ -45,52 +45,57 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
     }
 });
 
-// Process user messages
+// Procesar mensajes de usuario
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    await typing(ctx, provider);
-    
-    // Make sure we have a valid state object
-    if (!state) {
-        // Create a new state-like object if none exists
-        state = {
-            get: (key) => {
-                const userData = userStates.get(ctx.from) || {};
-                return userData[key] || null;
-            },
-            set: (key, value) => {
-                const userData = userStates.get(ctx.from) || {};
-                userData[key] = value;
-                userStates.set(ctx.from, userData);
-                return value;
-            }
-        };
-    }
-    
-    const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
-    const endOpenAI = Date.now();
-    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} seconds`);
+    try {
+        await typing(ctx, provider);
+        
+        // Asegurarse de que tenemos un objeto state válido
+        if (!state) {
+            // Crear un nuevo objeto tipo state si no existe
+            state = {
+                get: (key) => {
+                    const userData = userStates.get(ctx.from) || {};
+                    return userData[key] || null;
+                },
+                set: (key, value) => {
+                    const userData = userStates.get(ctx.from) || {};
+                    userData[key] = value;
+                    userStates.set(ctx.from, userData);
+                    return value;
+                }
+            };
+        }
+        
+        const startOpenAI = Date.now();
+        const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+        const endOpenAI = Date.now();
+        console.log(`⏳ Tiempo de respuesta OpenAI: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    // Split response into chunks and send sequentially
-    const chunks = response.split(/\n\n+/);
-    let fullResponse = "";
-    for (const chunk of chunks) {
-        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        fullResponse += cleanedChunk + "\n\n";
-    }
+        // Dividir respuesta en fragmentos y enviar secuencialmente
+        const chunks = response.split(/\n\n+/);
+        let fullResponse = "";
+        for (const chunk of chunks) {
+            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+            fullResponse += cleanedChunk + "\n\n";
+        }
 
-    return fullResponse.trim();
+        return fullResponse.trim();
+    } catch (error) {
+        console.error("Error en processUserMessage:", error);
+        return "Lo siento, ocurrió un error al procesar tu mensaje.";
+    }
 };
 
-// Handle message queue
+// Manejar cola de mensajes
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
     if (userLocks.get(userId)) return;
 
-    console.log(`📩 Messages in ${userId}'s queue:`, queue.length);
+    console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
 
     while (queue.length > 0) {
-        userLocks.set(userId, true); // Lock the queue
+        userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
             const response = await processUserMessage(ctx, { flowDynamic, state, provider });
@@ -98,26 +103,33 @@ const handleQueue = async (userId) => {
                 await flowDynamic(response);
             }
         } catch (error) {
-            console.error(`Error processing message for user ${userId}:`, error);
+            console.error(`Error procesando mensaje para usuario ${userId}:`, error);
         } finally {
-            userLocks.set(userId, false); // Release the lock
+            userLocks.set(userId, false); // Liberar el bloqueo
         }
     }
     userLocks.delete(userId);
     userQueues.delete(userId);
 };
 
-// Custom route for Twilio webhook
+// Ruta para el webhook de Twilio
 app.post("/webhook", async (req, res) => {
-    const twiml = new twilio.twiml.MessagingResponse();
+    // Observamos que estamos recibiendo dos solicitudes para cada mensaje
+    // Vamos a filtrar la solicitud vacía
+    if (!req.body.Body || !req.body.From) {
+        console.log("Recibida solicitud sin cuerpo o remitente, ignorando");
+        return res.status(200).send('OK');
+    }
+
     const incomingMessage = req.body.Body;
     const senderNumber = req.body.From;
+    console.log(`📩 Mensaje recibido de ${senderNumber}: ${incomingMessage}`);
 
-    console.log(`📩 Message received from ${senderNumber}: ${incomingMessage}`);
-
+    // Responder de inmediato para evitar timeout
+    const twiml = new twilio.twiml.MessagingResponse();
     res.type("text/xml").send(twiml.toString());
 
-    // Get or create state for this user
+    // Obtener o crear state para este usuario
     let userState = userStates.get(senderNumber);
     if (!userState) {
         userState = {
@@ -136,28 +148,34 @@ app.post("/webhook", async (req, res) => {
     }
 
     try {
-        // Process the message and send the response
-        const response = await processUserMessage(
-            { body: incomingMessage, from: senderNumber }, 
-            { flowDynamic: null, state: userState, provider: adapterProvider }
-        );
+        // Procesar el mensaje y enviar la respuesta de forma asíncrona
+        setTimeout(async () => {
+            try {
+                const response = await processUserMessage(
+                    { body: incomingMessage, from: senderNumber }, 
+                    { flowDynamic: null, state: userState, provider: adapterProvider }
+                );
 
-        // Send the response to the user
-        if (response) {
-            await adapterProvider.sendMessage(senderNumber, response);
-        }
+                // Enviar la respuesta al usuario
+                if (response) {
+                    await adapterProvider.sendMessage(senderNumber, response);
+                }
+            } catch (error) {
+                console.error("Error procesando mensaje en webhook:", error);
+                await adapterProvider.sendMessage(senderNumber, "Lo siento, ocurrió un error al procesar tu mensaje.");
+            }
+        }, 100); // Pequeño retraso para asegurarnos de que la respuesta HTTP ya fue enviada
     } catch (error) {
-        console.error("Error in webhook handler:", error);
-        await adapterProvider.sendMessage(senderNumber, "Sorry, I encountered an error processing your message.");
+        console.error("Error en manejador de webhook:", error);
     }
 });
 
-// Other custom routes
+// Otras rutas personalizadas
 app.get("/status", (req, res) => {
-    res.send("Server is running 🚀");
+    res.send("El servidor está en funcionamiento 🚀");
 });
 
-// Main function
+// Función principal
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
 
@@ -169,24 +187,24 @@ const main = async () => {
         port: Number(process.env.POSTGRES_DB_PORT),
     });
 
-    // Create the bot and get the httpServer
+    // Crear el bot y obtener el httpServer
     const { httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
 
-    // Create an HTTP server manually
+    // Crear un servidor HTTP manualmente
     const server = http.createServer(app);
 
-    // Integrate the HTTP server from createBot with Express
+    // Integrar el servidor HTTP de createBot con Express
     server.on("request", (req, res) => {
-        app(req, res); // Pass requests to the Express application
+        app(req, res); // Pasar solicitudes a la aplicación Express
     });
 
-    // Start the server
+    // Iniciar el servidor
     server.listen(PORT, () => {
-        console.log(`🚀 WhatsApp server running on port ${PORT}`);
+        console.log(`🚀 Servidor WhatsApp ejecutándose en el puerto ${PORT}`);
     });
 };
 
