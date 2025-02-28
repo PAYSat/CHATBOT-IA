@@ -63,7 +63,7 @@ const handleQueue = async (userId) => {
         try {
             await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
-            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+            console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
         } finally {
             userLocks.set(userId, false); // Liberar el bloqueo
         }
@@ -125,11 +125,7 @@ app.post("/webhook", async (req, res) => {
     const flowDynamic = async (messages) => {
         for (const message of messages) {
             try {
-                await adapterProvider.vendor.twilio.messages.create({
-                    body: message.body,
-                    from: process.env.VENDOR_NUMBER,
-                    to: numeroRemitente,
-                });
+                await adapterProvider.sendMessage(numeroRemitente, message.body, {});
                 console.log("✅ Mensaje enviado a WhatsApp:", message.body);
             } catch (error) {
                 console.error("❌ Error enviando mensaje:", error);
