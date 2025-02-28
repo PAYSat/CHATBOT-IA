@@ -153,17 +153,37 @@ app.post("/webhook", unwrapTwilioBody, async (req, res) => {
     console.log("📩 Webhook de Twilio activado");
     console.log("📩 Mensaje recibido:", JSON.stringify(req.body).substring(0, 500)); // Limitar a 500 caracteres
     
+    // Crear una respuesta TwiML vacía - sin mensaje adicional
     const twiml = new twilio.twiml.MessagingResponse();
     
-    // Respuesta vacía para confirmar recepción
-    console.log("📤 Enviando respuesta TwiML vacía");
-    res.type('text/xml').send(twiml.toString());
+    // IMPORTANTE: No enviar ningún contenido en la respuesta TwiML
+    console.log("📤 Enviando respuesta TwiML completamente vacía");
+    res.writeHead(200, {'Content-Type': 'text/xml'});
+    res.end(twiml.toString());
     
+    // Resto del código para procesar el mensaje...
     try {
-        // Crear el contexto para el mensaje
+        // Extraer y limpiar el mensaje
+        let userBody = req.body.Body || "";
+        
+        // Verificar si el mensaje es un JSON anidado
+        if (typeof userBody === 'string' && userBody.startsWith('{') && userBody.includes('"body":')) {
+            try {
+                const jsonData = JSON.parse(userBody);
+                if (jsonData.body && jsonData.body.Body) {
+                    console.log(`🔄 Extrayendo mensaje real del JSON en Body`);
+                    userBody = jsonData.body.Body;
+                }
+            } catch (e) {
+                console.log(`⚠️ Error al parsear JSON en Body: ${e.message}`);
+                // Continuar con el valor original si hay error
+            }
+        }
+        
+        // Crear el contexto para el mensaje con el cuerpo limpio
         const ctx = {
             from: req.body.From,
-            body: req.body.Body,
+            body: userBody,
         };
         
         console.log(`📝 Contexto creado: from=${ctx.from}, body="${ctx.body}"`);
