@@ -39,7 +39,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
 
         const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]); // Se usa flowDynamic como en tu código original
+        await flowDynamic([{ body: cleanedChunk }]); // Se usa flowDynamic
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
@@ -69,8 +69,8 @@ const handleQueue = async (userId) => {
         }
     }
 
-    userLocks.delete(userId); // Eliminar bloqueo una vez procesados todos los mensajes
-    userQueues.delete(userId); // Eliminar la cola cuando se procesen todos los mensajes
+    userLocks.delete(userId);
+    userQueues.delete(userId);
 };
 
 /**
@@ -90,49 +90,6 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
     if (!userLocks.get(userId) && queue.length === 1) {
         await handleQueue(userId);
     }
-});
-
-/**
- * Endpoint para recibir mensajes de WhatsApp (Webhook de Twilio)
- */
-app.post("/webhook", async (req, res) => {
-    const twiml = new twilio.twiml.MessagingResponse();
-    const mensajeEntrante = req.body.Body;
-    const numeroRemitente = req.body.From;
-
-    console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
-
-    res.type("text/xml").send(twiml.toString()); // Respuesta vacía para Twilio
-
-    if (!adapterProvider) {
-        console.error("❌ ERROR: `adapterProvider` no está definido aún.");
-        return res.status(500).send("Error interno: `adapterProvider` no está inicializado.");
-    }
-
-    // Crear un objeto state con los métodos necesarios
-    const state = {
-        get: (key) => null, // Placeholder
-        set: (key, value) => {},
-        update: (data) => console.log("Actualizando estado:", data),
-    };
-
-    // Crear función flowDynamic para enviar mensajes
-    const flowDynamic = async (messages) => {
-        for (const message of messages) {
-            try {
-                await adapterProvider.send(numeroRemitente, message.body); // Usa `send()` en vez de `sendMessage()`
-                console.log("✅ Mensaje enviado a WhatsApp:", message.body);
-            } catch (error) {
-                console.error("❌ Error enviando mensaje:", error);
-            }
-        }
-    };
-
-    // Llamar a processUserMessage con los parámetros correctos
-    await processUserMessage(
-        { body: mensajeEntrante, from: numeroRemitente },
-        { flowDynamic, state, provider: adapterProvider }
-    );
 });
 
 /**
