@@ -143,6 +143,8 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
 
 // 🔹 Inicializar el bot y unirlo con Express
 const main = async () => {
+    console.log("🔧 Iniciando el bot...");
+
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterDB = new PostgreSQLAdapter({
@@ -153,15 +155,27 @@ const main = async () => {
         port: Number(process.env.POSTGRES_DB_PORT),
     });
 
-    const { httpServer } = await createBot({
-        flow: adapterFlow,
-        provider: adapterProvider,
-        database: adapterDB,
-    });
+    console.log("✅ Base de datos conectada correctamente");
 
-        // ✅ Integrar Express con BuilderBot
+    try {
+        const { httpServer } = await createBot({
+            flow: adapterFlow,
+            provider: adapterProvider,
+            database: adapterDB,
+        });
+
+        console.log("✅ BuilderBot se ha inicializado correctamente");
+
+        // 🔹 Integrar Express con BuilderBot
         httpInject(app);
         app.use(httpServer);
+
+        console.log(`🚀 Servidor WhatsApp corriendo en el puerto ${PORT}`);
+    } catch (error) {
+        console.error("❌ Error iniciando el bot:", error);
+    }
 };
 
 main();
+
+
