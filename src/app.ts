@@ -120,7 +120,7 @@ app.post("/webhook", async (req, res) => {
     // Crear una función flowDynamic que use el provider para enviar mensajes
     const flowDynamic = async (messages) => {
         for (const message of messages) {
-            await adapterProvider.sendText(numeroRemitente, message.body); // Enviar mensaje a través de Twilio
+            await adapterProvider.sendMessage(numeroRemitente, message.body); // Usar sendMessage en lugar de sendText
             console.log("Mensaje enviado a WhatsApp:", message.body);
         }
     };
