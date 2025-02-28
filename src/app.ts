@@ -20,8 +20,10 @@ class SimpleState {
         this.state = {};
     }
     
-    update(key: string, value: any) {
-        this.state[key] = value;
+    // La firma correcta recibe un objeto con propiedades, no key/value individuales
+    async update(props: { [key: string]: any }) {
+        Object.assign(this.state, props);
+        return Promise.resolve();
     }
     
     getMyState() {
