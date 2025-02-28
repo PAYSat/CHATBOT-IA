@@ -13,7 +13,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true })); // Manejar application/x-www-form-urlencoded
 app.use(express.json());
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT ?? 8080;
 const ASSISTANT_ID = process.env.ASSISTANT_ID || "";
 const userQueues = new Map();
 const userLocks = new Map();
