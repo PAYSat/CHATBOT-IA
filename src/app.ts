@@ -1,101 +1,96 @@
 import "dotenv/config";
 import express from "express";
+import twilio from "twilio";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
-import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
+import { toAsk } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import twilio from "twilio";
 
-
-const MessagingResponse = twilio.twiml.MessagingResponse;
-const app = express();
-app.use(express.urlencoded({ extended: true })); // Manejar application/x-www-form-urlencoded
-app.use(express.json());
-
-const PORT = process.env.PORT ?? 8080;
-const ASSISTANT_ID = process.env.ASSISTANT_ID || "";
+const PORT = process.env.PORT ?? 3008;
+const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
 const userLocks = new Map();
 
-// Verifica la firma de Twilio
-const validateTwilioRequest = (req, res, next) => {
-    const twilioSignature = req.headers['x-twilio-signature'];
-    if (!twilioSignature) {
-        console.warn("⚠️ Solicitud sin firma de Twilio. Posible acceso no autorizado.");
-        return res.status(403).send("Acceso no autorizado");
-    }
-    next();
-};
+const app = express();
+app.use(express.urlencoded({ extended: false }));
 
-const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    await typing(ctx, provider);
-    const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
-    const endOpenAI = Date.now();
-    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
+const adapterProvider = createProvider(TwilioProvider, {
+    accountSid: process.env.ACCOUNT_SID,
+    authToken: process.env.AUTH_TOKEN,
+    vendorNumber: process.env.VENDOR_NUMBER,
+});
 
-    const chunks = response.split(/\n\n+/);
-    for (const chunk of chunks) {
-        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]);
-        const endTwilio = Date.now();
-        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
-    }
-};
+app.post("/webhook", async (req, res) => {
+    const twiml = new twilio.twiml.MessagingResponse();
+    const mensajeEntrante = req.body.Body;
+    const numeroRemitente = req.body.From;
 
-const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
-    if (userLocks.get(userId)) return;
-    while (queue.length > 0) {
-        userLocks.set(userId, true);
-        const { ctx, flowDynamic, state, provider } = queue.shift();
-        try {
-            await processUserMessage(ctx, { flowDynamic, state, provider });
-        } catch (error) {
-            console.error(`❌ Error procesando mensaje para ${userId}:`, error);
-        } finally {
-            userLocks.set(userId, false);
+    console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
+
+    res.type("text/xml").send(twiml.toString()); // Evita devolver JSON en WhatsApp
+    processUserMessage(numeroRemitente, mensajeEntrante, {});
+});
+
+const processUserMessage = async (from, body, state) => {
+    console.log(`🧠 Procesando mensaje de ${from}: ${body}`);
+
+    try {
+        const response = await toAsk(ASSISTANT_ID, body, state ?? { update: () => {}, getMyState: () => {}, get: () => {}, clear: () => {} });
+        const chunks = response.split(/\n\n+/);
+
+        for (const chunk of chunks) {
+            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+
+            await adapterProvider.sendMessage(from, cleanedChunk);
+
+            console.log(`📤 Mensaje enviado a ${from}: ${cleanedChunk}`);
         }
+    } catch (error) {
+        console.error(`❌ Error procesando mensaje para ${from}:`, error);
     }
-    userLocks.delete(userId);
-    userQueues.delete(userId);
 };
 
 const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynamic, state, provider }) => {
     const userId = ctx.from;
-    if (!userQueues.has(userId)) userQueues.set(userId, []);
-    userQueues.get(userId).push({ ctx, flowDynamic, state, provider });
-    if (!userLocks.get(userId) && userQueues.get(userId).length === 1) {
+
+    if (!userQueues.has(userId)) {
+        userQueues.set(userId, []);
+    }
+
+    const queue = userQueues.get(userId);
+    queue.push({ ctx, flowDynamic, state, provider });
+
+    if (!userLocks.get(userId) && queue.length === 1) {
         await handleQueue(userId);
     }
 });
 
+const handleQueue = async (userId) => {
+    const queue = userQueues.get(userId);
+    if (userLocks.get(userId)) return;
+
+    console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
+
+    while (queue.length > 0) {
+        userLocks.set(userId, true);
+        const { ctx, flowDynamic, state, provider } = queue.shift();
+        try {
+            await processUserMessage(ctx.from, ctx.body, state);
+        } catch (error) {
+            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+        } finally {
+            userLocks.set(userId, false);
+        }
+    }
+
+    userLocks.delete(userId);
+    userQueues.delete(userId);
+};
+
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
 
-    app.post("/sms", (req, res) => {
-        console.log("📩 Mensaje recibido de Twilio:", req.body);
-    
-        // Crear la respuesta en formato TwiML
-        const response = new MessagingResponse();
-        response.message("Recibimos tu mensaje, estamos procesándolo...");
-    
-        // Enviar la respuesta como XML
-        res.Type("text/xml").send(response.toString()).status(200);
-
-        
-        app.listen(PORT, () => {
-            console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
-        });
-    });
-    
-    const adapterProvider = createProvider(TwilioProvider, {
-        accountSid: process.env.ACCOUNT_SID,
-        authToken: process.env.AUTH_TOKEN,
-        vendorNumber: process.env.VENDOR_NUMBER,
-    });
     const adapterDB = new PostgreSQLAdapter({
         host: process.env.POSTGRES_DB_HOST,
         user: process.env.POSTGRES_DB_USER,
@@ -103,15 +98,16 @@ const main = async () => {
         database: process.env.POSTGRES_DB_NAME,
         port: Number(process.env.POSTGRES_DB_PORT),
     });
+
     const { httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
-    httpInject(adapterProvider.server);
-    
+
+    app.listen(PORT, () => {
+        console.log(`🚀 Servidor WhatsApp ejecutándose en el puerto ${PORT}`);
+    });
 };
-
-
 
 main();
