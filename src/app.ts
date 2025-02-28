@@ -12,11 +12,10 @@ app.use(express.urlencoded({ extended: false }));
 
 const PORT = process.env.PORT ?? 3008;
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
-
 const userQueues = new Map();
 const userLocks = new Map();
 
-let adapterProvider;
+let adapterProvider = null; // Evitar que sea undefined
 
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
@@ -34,11 +33,11 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
 
         const startTwilio = Date.now();
-        if (flowDynamic && typeof flowDynamic === "function") {
+        try {
             await flowDynamic([{ body: cleanedChunk }]); // BuilderBot maneja el envío
             console.log("✅ Mensaje enviado correctamente a WhatsApp:", cleanedChunk);
-        } else {
-            console.error("❌ ERROR: `flowDynamic` no está definido correctamente.");
+        } catch (error) {
+            console.error("❌ Error al enviar mensaje con Twilio:", error);
         }
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
@@ -50,7 +49,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
  */
 const handleQueue = async (userId) => {
     if (userLocks.get(userId)) {
-        console.log(`⏳ Usuario ${userId} ya tiene un proceso en ejecución. Omitiendo mensaje duplicado.`);
+        console.log(`⏳ Usuario ${userId} ya tiene un proceso en ejecución.`);
         return;
     }
     userLocks.set(userId, true);
@@ -100,8 +99,6 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
 
-    res.type("text/xml").send(twiml.toString());
-
     if (!adapterProvider) {
         console.error("❌ ERROR: `adapterProvider` no está definido aún.");
         return res.status(500).send("Error interno: `adapterProvider` no está inicializado.");
@@ -115,7 +112,18 @@ app.post("/webhook", async (req, res) => {
 
     const flowDynamicWrapper = async (messages) => {
         for (const message of messages) {
-            console.log("✅ Mensaje listo para enviar:", message.body);
+            console.log("✅ Intentando enviar mensaje:", message.body);
+
+            try {
+                await adapterProvider.sendMessage({
+                    to: numeroRemitente,
+                    from: process.env.VENDOR_NUMBER,
+                    body: message.body,
+                });
+                console.log("✅ Mensaje enviado correctamente a WhatsApp:", message.body);
+            } catch (error) {
+                console.error("❌ Error al enviar mensaje con Twilio:", error);
+            }
         }
     };
 
@@ -123,6 +131,10 @@ app.post("/webhook", async (req, res) => {
         { body: mensajeEntrante, from: numeroRemitente },
         { flowDynamic: flowDynamicWrapper, state, provider: adapterProvider }
     );
+
+    // Evita el JSON molesto respondiendo con un XML válido
+    twiml.message("Gracias por tu mensaje. Estamos procesándolo.");
+    res.type("text/xml").send(twiml.toString());
 });
 
 /**
@@ -138,7 +150,6 @@ const main = async () => {
     });
 
     console.log("✅ Twilio Provider Inicializado:", adapterProvider);
-    console.log("🛠 Métodos disponibles en `adapterProvider`:", Object.keys(adapterProvider));
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
