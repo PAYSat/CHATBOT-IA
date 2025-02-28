@@ -24,10 +24,6 @@ const userLocks = new Map(); // Mecanismo de bloqueo
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    if (!provider) {
-        throw new Error("Provider no está definido.");
-    }
-
     await typing(ctx, provider);
 
     const startOpenAI = Date.now();
@@ -124,7 +120,7 @@ app.post("/webhook", async (req, res) => {
     // Crear una función flowDynamic que use el provider para enviar mensajes
     const flowDynamic = async (messages) => {
         for (const message of messages) {
-            await adapterProvider.sendMessage(numeroRemitente, message.body); // Enviar mensaje a través de Twilio
+            await adapterProvider.sendMessage(numeroRemitente, message.body, {}); // Usar sendMessage con opciones vacías
             console.log("Mensaje enviado a WhatsApp:", message.body);
         }
     };
