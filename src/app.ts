@@ -75,7 +75,7 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
 
-    app.post("/sms", validateTwilioRequest, (req, res) => {
+    app.post("/sms", (req, res) => {
         console.log("📩 Mensaje recibido de Twilio:", req.body);
     
         // Crear la respuesta en formato TwiML
@@ -84,7 +84,11 @@ const main = async () => {
     
         // Enviar la respuesta como XML
         res.Type("text/xml").send(response.toString()).status(200);
+
         
+        app.listen(PORT, () => {
+            console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
+        });
     });
     
     const adapterProvider = createProvider(TwilioProvider, {
@@ -105,7 +109,7 @@ const main = async () => {
         database: adapterDB,
     });
     httpInject(adapterProvider.server);
-    httpServer(+PORT);
+    
 };
 
 
