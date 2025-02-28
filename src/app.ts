@@ -75,7 +75,7 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
 
-    app.post("/webhook", validateTwilioRequest, (req, res) => {
+    app.post("/sms", validateTwilioRequest, (req, res) => {
         console.log("📩 Mensaje recibido de Twilio:", req.body);
     
         // Crear la respuesta en formato TwiML
