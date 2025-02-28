@@ -85,9 +85,7 @@ const main = async () => {
         // Envía la respuesta a Twilio en formato XML
         res.type("text/xml").send(response.toString());
     });
-    app.listen(PORT, () => {
-        console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
-    });
+    
     const adapterProvider = createProvider(TwilioProvider, {
         accountSid: process.env.ACCOUNT_SID,
         authToken: process.env.AUTH_TOKEN,
