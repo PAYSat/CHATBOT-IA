@@ -29,30 +29,26 @@ app.post("/webhook", async (req, res) => {
     console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
 
     res.type("text/xml").send(twiml.toString()); // Evita devolver JSON en WhatsApp
-    processUserMessage(numeroRemitente, mensajeEntrante, {});
+    processUserMessage(numeroRemitente, { flowDynamic: null, state: null, provider: null });
 });
 
-const processUserMessage = async (from, body, state) => {
-    console.log(`🧠 Procesando mensaje de ${from}: ${body}`);
+const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
+    await typing(ctx, provider);
+    
+    const startOpenAI = Date.now();
+    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const endOpenAI = Date.now();
+    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    try {
-        const response = await toAsk(ASSISTANT_ID, body, {
-    update: async (props: { [key: string]: any }) => Promise.resolve(),
-    getMyState: () => ({}),
-    get: <K>() => ({} as K),
-    clear: () => {}
-});
-        const chunks = response.split(/\n\n+/);
-
-        for (const chunk of chunks) {
-            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-
-            await adapterProvider.sendMessage(from, cleanedChunk);
-
-            console.log(`📤 Mensaje enviado a ${from}: ${cleanedChunk}`);
-        }
-    } catch (error) {
-        console.error(`❌ Error procesando mensaje para ${from}:`, error);
+    // Divide la respuesta en fragmentos y los envía secuencialmente
+    const chunks = response.split(/\n\n+/);
+    for (const chunk of chunks) {
+        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+        
+        const startTwilio = Date.now();
+        await flowDynamic([{ body: cleanedChunk }]);
+        const endTwilio = Date.now();
+        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
 };
 
@@ -78,17 +74,16 @@ const handleQueue = async (userId) => {
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
 
     while (queue.length > 0) {
-        userLocks.set(userId, true);
+        userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
-            await processUserMessage(ctx.from, ctx.body, state);
+            await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
             console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
         } finally {
-            userLocks.set(userId, false);
+            userLocks.set(userId, false); // Liberar el bloqueo
         }
     }
-
     userLocks.delete(userId);
     userQueues.delete(userId);
 };
