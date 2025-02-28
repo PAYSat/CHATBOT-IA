@@ -5,9 +5,11 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import { twiml } from "twilio";
 
-const { MessagingResponse } = twiml;
+
+const twilio = require("twilio");
+
+const { MessagingResponse } = twilio.twiml;
 const app = express();
 app.use(express.urlencoded({ extended: true })); // Manejar application/x-www-form-urlencoded
 app.use(express.json());
