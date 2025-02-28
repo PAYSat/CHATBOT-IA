@@ -159,14 +159,9 @@ const main = async () => {
         database: adapterDB,
     });
 
-    // 🔹 Inyectamos Express en el mismo servidor de BuilderBot
-    httpInject(app); // Inyectamos Express en BuilderBot
-    app.use(httpServer); // Hacemos que Express maneje las peticiones del bot
-
-    // 🔹 Iniciar el servidor en el puerto de Railway
-    app.listen(PORT, () => {
-        console.log(`🚀 Servidor WhatsApp ejecutándose en el puerto ${PORT}`);
-    });
+        // ✅ Integrar Express con BuilderBot
+        httpInject(app);
+        app.use(httpServer);
 };
 
 main();
