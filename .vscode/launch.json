@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug BuilderBot",
+            "skipFiles": ["<node_internals>/**"],
+            "program": "${workspaceFolder}/src/app.ts",
+            "envFile": "${workspaceFolder}/.env",
+            "runtimeArgs": ["--inspect"],
+            "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+            "console": "integratedTerminal"
+        }
+    ]
+}
