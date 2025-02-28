@@ -39,7 +39,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
 
         const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]);
+        await flowDynamic([{ body: cleanedChunk }]); // Se usa flowDynamic como en tu código original
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
@@ -93,7 +93,7 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
 });
 
 /**
- * Endpoint para recibir mensajes de WhatsApp
+ * Endpoint para recibir mensajes de WhatsApp (Webhook de Twilio)
  */
 app.post("/webhook", async (req, res) => {
     const twiml = new twilio.twiml.MessagingResponse();
@@ -109,11 +109,6 @@ app.post("/webhook", async (req, res) => {
         return res.status(500).send("Error interno: `adapterProvider` no está inicializado.");
     }
 
-    if (typeof adapterProvider.send !== "function") {
-        console.error("❌ ERROR: `send` no está definido en `adapterProvider`.");
-        return res.status(500).send("Error interno: `send` no es una función válida.");
-    }
-
     // Crear un objeto state con los métodos necesarios
     const state = {
         get: (key) => null, // Placeholder
@@ -121,11 +116,11 @@ app.post("/webhook", async (req, res) => {
         update: (data) => console.log("Actualizando estado:", data),
     };
 
-    // Crear una función flowDynamic para enviar mensajes
+    // Crear función flowDynamic para enviar mensajes
     const flowDynamic = async (messages) => {
         for (const message of messages) {
             try {
-                await adapterProvider.send(numeroRemitente, message.body);
+                await adapterProvider.send(numeroRemitente, message.body); // Usa `send()` en vez de `sendMessage()`
                 console.log("✅ Mensaje enviado a WhatsApp:", message.body);
             } catch (error) {
                 console.error("❌ Error enviando mensaje:", error);
