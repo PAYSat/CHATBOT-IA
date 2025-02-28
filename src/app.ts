@@ -19,7 +19,7 @@ const userLocks = new Map();
 let adapterProvider;
 
 /**
- * Procesa el mensaje del usuario y envía la respuesta a WhatsApp.
+ * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
@@ -34,11 +34,11 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
 
         const startTwilio = Date.now();
-        if (adapterProvider && typeof adapterProvider.send === "function") {
-            await adapterProvider.send(ctx.from, cleanedChunk);
-            console.log("✅ Mensaje enviado a WhatsApp:", cleanedChunk);
+        if (flowDynamic && typeof flowDynamic === "function") {
+            await flowDynamic([{ body: cleanedChunk }]); // BuilderBot maneja el envío
+            console.log("✅ Mensaje enviado correctamente a WhatsApp:", cleanedChunk);
         } else {
-            console.error("❌ ERROR: `send` no está definido en `adapterProvider`.");
+            console.error("❌ ERROR: `flowDynamic` no está definido correctamente.");
         }
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
@@ -113,9 +113,15 @@ app.post("/webhook", async (req, res) => {
         update: (data) => console.log("Actualizando estado:", data),
     };
 
+    const flowDynamicWrapper = async (messages) => {
+        for (const message of messages) {
+            console.log("✅ Mensaje listo para enviar:", message.body);
+        }
+    };
+
     await processUserMessage(
         { body: mensajeEntrante, from: numeroRemitente },
-        { flowDynamic: () => {}, state, provider: adapterProvider }
+        { flowDynamic: flowDynamicWrapper, state, provider: adapterProvider }
     );
 });
 
