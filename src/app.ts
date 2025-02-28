@@ -16,7 +16,7 @@ const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
 
 const app = express();
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 /**
@@ -99,8 +99,7 @@ app.post("/webhook", async (req, res) => {
     console.log("📩 Mensaje recibido:", req.body);
 
     // Enviar una respuesta TwiML vacía a Twilio para confirmar la recepción
-    res.set("Content-Type", "text/xml");
-    res.status(200).send(twiml.toString());
+    res.type('text/xml').send(twiml.toString());
 
     // Procesar el mensaje en el bot
     processUserMessage(req.body.From, { flowDynamic: null, state: null, provider: null });
