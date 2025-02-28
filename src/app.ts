@@ -53,6 +53,9 @@ app.post("/webhook", async (req, res) => {
     }
 });
 
+
+
+
 // 🔹 Manejo de colas
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
@@ -63,10 +66,19 @@ const handleQueue = async (userId) => {
     while (queue.length > 0) {
         userLocks.set(userId, true);
         const { ctx, flowDynamic, state, provider } = queue.shift();
+
+        // ✅ Asegurar que `state` nunca sea `null`
+        const safeState = state ?? {
+            get: () => null,
+            update: () => { },
+            getMyState: () => null,
+            clear: () => { }
+        };
+
         try {
-            await processUserMessage(ctx, { flowDynamic, state, provider });
+            await processUserMessage(ctx, { flowDynamic, state: safeState, provider });
         } catch (error) {
-            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+            console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
         } finally {
             userLocks.set(userId, false);
         }
@@ -76,11 +88,20 @@ const handleQueue = async (userId) => {
     userQueues.delete(userId);
 };
 
-// 🔹 Procesar mensajes con OpenAI
+
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
+
+    // ✅ Crear un estado vacío con los métodos que `toAsk()` necesita
+    const safeState = state ?? {
+        get: () => null,
+        update: () => { },
+        getMyState: () => null,
+        clear: () => { }
+    };
+
     const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const response = await toAsk(ASSISTANT_ID, ctx.body, safeState); // ✅ Ahora `safeState` siempre tiene los métodos requeridos
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
@@ -93,6 +114,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
 };
+
 
 // 🔹 Flujo de bienvenida
 const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynamic, state, provider }) => {
