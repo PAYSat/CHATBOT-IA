@@ -83,8 +83,8 @@ const main = async () => {
         response.message("Recibimos tu mensaje, estamos procesándolo...");
     
         // Enviar la respuesta como XML
-        res.setHeader("Content-Type", "text/xml");
-        res.status(200).send(response.toString());
+        res.Type("text/xml").send(response.toString()).status(200);
+        
     });
     
     const adapterProvider = createProvider(TwilioProvider, {
