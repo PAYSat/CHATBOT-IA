@@ -32,36 +32,36 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
 
-    // 🔸 Responder rápido para evitar JSON en WhatsApp
-    res.type("text/xml").send(twiml.toString());
+    try {
+        // Responder rápidamente para evitar que WhatsApp se quede esperando un JSON
+        res.type("text/xml").send(twiml.toString());
 
-    // 🔸 Agregar mensaje a la cola y procesarlo
-    if (!userQueues.has(numeroRemitente)) {
-        userQueues.set(numeroRemitente, []);
-    }
+        // Agregar el mensaje a la cola y procesarlo
+        if (!userQueues.has(numeroRemitente)) {
+            userQueues.set(numeroRemitente, []);
+        }
 
-    const queue = userQueues.get(numeroRemitente);
-    queue.push({
-        ctx: { from: numeroRemitente, body: mensajeEntrante },
-        flowDynamic: adapterProvider.sendMessage, // Pasamos la función de envío de mensajes
-        state: null,
-        provider: adapterProvider,
-    });
+        const queue = userQueues.get(numeroRemitente);
+        queue.push({
+            ctx: { from: numeroRemitente, body: mensajeEntrante },
+            flowDynamic: adapterProvider.sendMessage,
+            state: null,
+            provider: adapterProvider,
+        });
 
-    if (!userLocks.get(numeroRemitente) && queue.length === 1) {
-        await handleQueue(numeroRemitente);
+        if (!userLocks.get(numeroRemitente) && queue.length === 1) {
+            await handleQueue(numeroRemitente);
+        }
+    } catch (error) {
+        console.error(`❌ Error procesando el webhook:`, error);
+        res.status(500).send('Internal Server Error');
     }
 });
 
-
-
-
 // 🔹 Manejo de colas
-
 const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
 
-    // ✅ Si `state` es `null`, creamos un estado vacío con métodos válidos
     const safeState = state ?? {
         get: () => null,
         update: () => {},
@@ -69,25 +69,24 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         clear: () => {}
     };
 
-    const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, safeState);
-    const endOpenAI = Date.now();
-    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
+    try {
+        const startOpenAI = Date.now();
+        const response = await toAsk(ASSISTANT_ID, ctx.body, safeState);
+        const endOpenAI = Date.now();
+        console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    // 🔹 Usar `flowDynamic()` en lugar de `provider.sendMessage()`
-    const chunks = response.split(/\n\n+/);
-    for (const chunk of chunks) {
-        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        const startTwilio = Date.now();
-        
-        // ✅ Volvemos a usar `flowDynamic()` como en el código original
-        await flowDynamic([{ body: cleanedChunk }]);
-
-        const endTwilio = Date.now();
-        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+        const chunks = response.split(/\n\n+/);
+        for (const chunk of chunks) {
+            const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+            const startTwilio = Date.now();
+            await flowDynamic([{ body: cleanedChunk }]);
+            const endTwilio = Date.now();
+            console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+        }
+    } catch (error) {
+        console.error(`❌ Error procesando mensaje para el usuario ${ctx.from}:`, error);
     }
 };
-
 
 // 🔹 Asegurar que `provider` nunca sea undefined en `handleQueue()`
 const handleQueue = async (userId) => {
@@ -107,7 +106,7 @@ const handleQueue = async (userId) => {
             clear: () => {}
         };
 
-        // ✅ Asegurar que `provider` tenga valor
+        // Asegurar que `provider` tenga valor
         provider = provider ?? adapterProvider;
 
         try {
@@ -122,8 +121,6 @@ const handleQueue = async (userId) => {
     userLocks.delete(userId);
     userQueues.delete(userId);
 };
-
-
 
 // 🔹 Flujo de bienvenida
 const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynamic, state, provider }) => {
@@ -141,12 +138,8 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
     }
 });
 
-// 🔹 Inicializar el bot y unirlo con Express
-const main = async () => {
-    console.log("🔧 Iniciando el bot...");
-
-    const adapterFlow = createFlow([welcomeFlow]);
-
+// 🔹 Conectar a la base de datos PostgreSQL
+const setupDatabase = () => {
     const adapterDB = new PostgreSQLAdapter({
         host: process.env.POSTGRES_DB_HOST,
         user: process.env.POSTGRES_DB_USER,
@@ -156,8 +149,18 @@ const main = async () => {
     });
 
     console.log("✅ Base de datos conectada correctamente");
+    return adapterDB;
+};
+
+// 🔹 Inicializar el bot y unirlo con Express
+const main = async () => {
+    console.log("🔧 Iniciando el bot...");
+
+    const adapterFlow = createFlow([welcomeFlow]);
 
     try {
+        const adapterDB = setupDatabase(); // Crear el adaptador de base de datos
+
         const { httpServer } = await createBot({
             flow: adapterFlow,
             provider: adapterProvider,
@@ -177,5 +180,3 @@ const main = async () => {
 };
 
 main();
-
-
