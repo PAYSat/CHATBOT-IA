@@ -92,6 +92,47 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynam
     }
 });
 
+app.post("/webhook", async (req, res) => {
+    const twiml = new twilio.twiml.MessagingResponse();
+    const mensajeEntrante = req.body.Body;
+    const numeroRemitente = req.body.From;
+
+    console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
+
+    res.type("text/xml").send(twiml.toString()); // Respuesta vacía para Twilio
+
+    if (!adapterProvider) {
+        console.error("❌ ERROR: `adapterProvider` no está definido aún.");
+        return res.status(500).send("Error interno: `adapterProvider` no está inicializado.");
+    }
+
+    // Crear un objeto state con los métodos necesarios
+    const state = {
+        get: (key) => null, // Placeholder
+        set: (key, value) => {},
+        update: (data) => console.log("Actualizando estado:", data),
+    };
+
+    // Crear función flowDynamic para enviar mensajes
+    const flowDynamic = async (messages) => {
+        for (const message of messages) {
+            try {
+                await flowDynamic([{ body: message.body }]); // BuilderBot maneja el envío
+                console.log("✅ Mensaje enviado a WhatsApp:", message.body);
+            } catch (error) {
+                console.error("❌ Error enviando mensaje:", error);
+            }
+        }
+    };
+
+    // Llamar a processUserMessage con los parámetros correctos
+    await processUserMessage(
+        { body: mensajeEntrante, from: numeroRemitente },
+        { flowDynamic, state, provider: adapterProvider }
+    );
+});
+
+
 /**
  * Función principal que configura e inicia el bot
  */
