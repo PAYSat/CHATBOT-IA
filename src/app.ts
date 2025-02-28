@@ -123,7 +123,7 @@ const main = async () => {
     const app = express();
     app.use(express.urlencoded({ extended: false }));
 
-    app.post("/twilio-webhook", async (req, res) => {
+    app.post("/webhook", async (req, res) => {
         const userId = req.body.From;
         const ctx = { from: userId, body: req.body.Body };
 
