@@ -1,4 +1,7 @@
 import "dotenv/config";
+import express from "express";
+import twilio from "twilio";
+
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
@@ -11,6 +14,10 @@ const PORT = process.env.PORT ?? 3008;
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
+
+const app = express();
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
@@ -53,7 +60,7 @@ const handleQueue = async (userId) => {
         try {
             await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
-            console.error(`Error procesando mensaje para el usuario ${userId}:`, error);
+            console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
         } finally {
             userLocks.set(userId, false); // Liberar el bloqueo
         }
@@ -64,7 +71,7 @@ const handleQueue = async (userId) => {
 };
 
 /**
- * Flujo de bienvenida que maneja las respuestas del asistente de IA
+ * Flujo de bienvenida que maneja las respuestas del asistente de IA.
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
@@ -84,7 +91,22 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
     });
 
 /**
- * Función principal que configura e inicia el bot
+ * Webhook de Twilio para recibir mensajes y confirmar su recepción.
+ */
+app.post("/webhook", async (req, res) => {
+    const twiml = new twilio.twiml.MessagingResponse();
+    
+    console.log("📩 Mensaje recibido:", req.body);
+    
+    // Enviar una respuesta vacía a Twilio para evitar errores de procesamiento
+    res.type("text/xml").send(twiml.toString());
+
+    // Procesar el mensaje recibido en el bot
+    processUserMessage(req.body.From, { flowDynamic: null, state: null, provider: null });
+});
+
+/**
+ * Función principal que configura e inicia el bot.
  */
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
@@ -112,8 +134,10 @@ const main = async () => {
         database: adapterDB,
     });
 
+    // Inyectar el servidor HTTP para manejar Twilio correctamente
     httpInject(adapterProvider.server);
     httpServer(+PORT);
 };
 
+// Iniciar el bot
 main();
