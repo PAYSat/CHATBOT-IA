@@ -10,10 +10,7 @@ import twilio from "twilio";
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-/** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
-
-/** ID del asistente de OpenAI */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 
 const userQueues = new Map();
@@ -33,13 +30,17 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     const endOpenAI = Date.now();
     console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
 
-    // Divide la respuesta en fragmentos y los envía secuencialmente
     const chunks = response.split(/\n\n+/);
     for (const chunk of chunks) {
         const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
 
         const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]); // Se usa flowDynamic
+        if (flowDynamic && typeof flowDynamic === "function") {
+            await flowDynamic([{ body: cleanedChunk }]); // BuilderBot maneja el envío
+            console.log("✅ Mensaje enviado a WhatsApp:", cleanedChunk);
+        } else {
+            console.error("❌ ERROR: `flowDynamic` no está definido correctamente.");
+        }
         const endTwilio = Date.now();
         console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
     }
@@ -49,23 +50,21 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
  * Maneja la cola de mensajes para cada usuario.
  */
 const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
-
     if (userLocks.get(userId)) {
-        return; // Si está bloqueado, omitir procesamiento
+        console.log(`⏳ Usuario ${userId} ya tiene un proceso en ejecución. Omitiendo mensaje duplicado.`);
+        return;
     }
+    userLocks.set(userId, true);
 
+    const queue = userQueues.get(userId);
     console.log(`📩 Mensajes en la cola de ${userId}:`, queue.length);
 
     while (queue.length > 0) {
-        userLocks.set(userId, true); // Bloquear la cola
         const { ctx, flowDynamic, state, provider } = queue.shift();
         try {
             await processUserMessage(ctx, { flowDynamic, state, provider });
         } catch (error) {
             console.error(`❌ Error procesando mensaje para el usuario ${userId}:`, error);
-        } finally {
-            userLocks.set(userId, false); // Liberar el bloqueo
         }
     }
 
@@ -74,24 +73,27 @@ const handleQueue = async (userId) => {
 };
 
 /**
- * Flujo de bienvenida que maneja las respuestas del asistente de IA
+ * Flujo de bienvenida que maneja las respuestas del asistente de IA.
  */
-const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(async (ctx, { flowDynamic, state, provider }) => {
-    const userId = ctx.from; // Identificador único por usuario
+const welcomeFlow = addKeyword(EVENTS.WELCOME)
+    .addAction(async (ctx, { flowDynamic, state, provider }) => {
+        const userId = ctx.from;
 
-    if (!userQueues.has(userId)) {
-        userQueues.set(userId, []);
-    }
+        if (!userQueues.has(userId)) {
+            userQueues.set(userId, []);
+        }
 
-    const queue = userQueues.get(userId);
-    queue.push({ ctx, flowDynamic, state, provider });
+        const queue = userQueues.get(userId);
+        queue.push({ ctx, flowDynamic, state, provider });
 
-    // Si este es el único mensaje en la cola, procesarlo inmediatamente
-    if (!userLocks.get(userId) && queue.length === 1) {
-        await handleQueue(userId);
-    }
-});
+        if (!userLocks.get(userId) && queue.length === 1) {
+            await handleQueue(userId);
+        }
+    });
 
+/**
+ * Webhook de Twilio para recibir mensajes de WhatsApp.
+ */
 app.post("/webhook", async (req, res) => {
     const twiml = new twilio.twiml.MessagingResponse();
     const mensajeEntrante = req.body.Body;
@@ -106,40 +108,31 @@ app.post("/webhook", async (req, res) => {
         return res.status(500).send("Error interno: `adapterProvider` no está inicializado.");
     }
 
-    // Crear un objeto state con los métodos necesarios
     const state = {
-        get: (key) => null, // Placeholder
+        get: (key) => null,
         set: (key, value) => {},
         update: (data) => console.log("Actualizando estado:", data),
     };
 
-    // Crear función flowDynamic para enviar mensajes
     const flowDynamic = async (messages) => {
         for (const message of messages) {
-            try {
-                await flowDynamic([{ body: message.body }]); // BuilderBot maneja el envío
-                console.log("✅ Mensaje enviado a WhatsApp:", message.body);
-            } catch (error) {
-                console.error("❌ Error enviando mensaje:", error);
-            }
+            await flowDynamic([{ body: message.body }]); // Se usa `flowDynamic()`, no `send()`
+            console.log("✅ Mensaje enviado a WhatsApp:", message.body);
         }
     };
 
-    // Llamar a processUserMessage con los parámetros correctos
     await processUserMessage(
         { body: mensajeEntrante, from: numeroRemitente },
         { flowDynamic, state, provider: adapterProvider }
     );
 });
 
-
 /**
- * Función principal que configura e inicia el bot
+ * Función principal que configura e inicia el bot.
  */
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
 
-    // Inicializar el adapterProvider
     adapterProvider = createProvider(TwilioProvider, {
         accountSid: process.env.ACCOUNT_SID,
         authToken: process.env.AUTH_TOKEN,
@@ -167,6 +160,7 @@ const main = async () => {
     });
 
     httpInject(adapterProvider.server);
+    
     app.listen(PORT, () => {
         console.log(`🚀 Servidor WhatsApp ejecutándose en el puerto ${PORT}`);
     });
