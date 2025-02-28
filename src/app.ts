@@ -20,6 +20,9 @@ const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
 
+// Variable global para el adapterProvider
+let adapterProvider;
+
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
  */
@@ -132,18 +135,18 @@ app.post("/webhook", async (req, res) => {
     );
 });
 
-// Crear el adapterProvider fuera de la función main
-const adapterProvider = createProvider(TwilioProvider, {
-    accountSid: process.env.ACCOUNT_SID,
-    authToken: process.env.AUTH_TOKEN,
-    vendorNumber: process.env.VENDOR_NUMBER,
-});
-
 /**
  * Función principal que configura e inicia el bot
  */
 const main = async () => {
     const adapterFlow = createFlow([welcomeFlow]);
+
+    // Inicializar el adapterProvider
+    adapterProvider = createProvider(TwilioProvider, {
+        accountSid: process.env.ACCOUNT_SID,
+        authToken: process.env.AUTH_TOKEN,
+        vendorNumber: process.env.VENDOR_NUMBER,
+    });
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
