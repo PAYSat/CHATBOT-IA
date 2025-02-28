@@ -57,6 +57,27 @@ app.post("/webhook", async (req, res) => {
 
 
 // 🔹 Manejo de colas
+
+const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
+    await typing(ctx, provider ?? adapterProvider); // Si `provider` es undefined, usa `adapterProvider`
+
+    const startOpenAI = Date.now();
+    const response = await toAsk(ASSISTANT_ID, ctx.body, state);
+    const endOpenAI = Date.now();
+    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
+
+    const chunks = response.split(/\n\n+/);
+    for (const chunk of chunks) {
+        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
+
+        const startTwilio = Date.now();
+        await flowDynamic([{ body: cleanedChunk }], provider ?? adapterProvider); // ✅ Asegurar que `provider` nunca sea undefined
+        const endTwilio = Date.now();
+        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
+    }
+};
+
+// 🔹 Asegurar que `provider` nunca sea undefined en `handleQueue()`
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
     if (userLocks.get(userId)) return;
@@ -65,15 +86,17 @@ const handleQueue = async (userId) => {
 
     while (queue.length > 0) {
         userLocks.set(userId, true);
-        const { ctx, flowDynamic, state, provider } = queue.shift();
+        let { ctx, flowDynamic, state, provider } = queue.shift();
 
-        // ✅ Asegurar que `state` nunca sea `null`
         const safeState = state ?? {
             get: () => null,
-            update: () => { },
+            update: () => {},
             getMyState: () => null,
-            clear: () => { }
+            clear: () => {}
         };
+
+        // ✅ Asegurar que `provider` tenga valor
+        provider = provider ?? adapterProvider;
 
         try {
             await processUserMessage(ctx, { flowDynamic, state: safeState, provider });
@@ -88,32 +111,6 @@ const handleQueue = async (userId) => {
     userQueues.delete(userId);
 };
 
-
-const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
-    await typing(ctx, provider);
-
-    // ✅ Crear un estado vacío con los métodos que `toAsk()` necesita
-    const safeState = state ?? {
-        get: () => null,
-        update: () => { },
-        getMyState: () => null,
-        clear: () => { }
-    };
-
-    const startOpenAI = Date.now();
-    const response = await toAsk(ASSISTANT_ID, ctx.body, safeState); // ✅ Ahora `safeState` siempre tiene los métodos requeridos
-    const endOpenAI = Date.now();
-    console.log(`⏳ OpenAI Response Time: ${(endOpenAI - startOpenAI) / 1000} segundos`);
-
-    const chunks = response.split(/\n\n+/);
-    for (const chunk of chunks) {
-        const cleanedChunk = chunk.trim().replace(/【.*?】[ ] /g, "");
-        const startTwilio = Date.now();
-        await flowDynamic([{ body: cleanedChunk }]);
-        const endTwilio = Date.now();
-        console.log(`📤 Twilio Send Time: ${(endTwilio - startTwilio) / 1000} segundos`);
-    }
-};
 
 
 // 🔹 Flujo de bienvenida
