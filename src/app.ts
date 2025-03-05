@@ -114,16 +114,12 @@ const main = async () => {
 
     httpInject(adapterProvider.server);
 
-    // 📌 🔹 Webhook para recibir mensajes de Twilio y responder en XML
-    adapterProvider.server.post("/webhook", async (req, res) => {
+     // 📌 ✅ Webhook para recibir mensajes de Twilio correctamente
+     adapterProvider.server.post("/webhook", async (req, res) => {
         console.log("🔹 Twilio Webhook recibido:", req.body);
 
-        res.set("Content-Type", "application/xml"); // Twilio espera XML
-        res.send(`
-            <Response>
-                <Message>Procesando tu mensaje...</Message>
-            </Response>
-        `);
+        // Asegurar que Twilio recibe una respuesta válida
+        res.status(200).send("OK");
     });
 
     httpServer(+PORT);
