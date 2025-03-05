@@ -33,6 +33,10 @@ app.post("/webhook", async (req, res) => {
 
     res.type("text/xml").send(twiml.toString()); // Respuesta TwiML vacía
 
+    // Crear un estado inicial para el usuario
+    const state = new Map(); // O usa el estado que necesites
+    state.set(numeroRemitente, {}); // Inicializa el estado para el usuario
+
     // Procesar el mensaje del usuario
     const userId = numeroRemitente;
     if (!userQueues.has(userId)) {
@@ -40,7 +44,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     const queue = userQueues.get(userId);
-    queue.push({ ctx: { from: userId, body: mensajeEntrante }, flowDynamic: null, state: null, provider: null });
+    queue.push({ ctx: { from: userId, body: mensajeEntrante }, flowDynamic: null, state, provider: adapterProvider });
 
     // Si este es el único mensaje en la cola, procesarlo inmediatamente
     if (!userLocks.get(userId) && queue.length === 1) {
