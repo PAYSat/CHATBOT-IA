@@ -68,7 +68,10 @@ const handleQueue = async (userId) => {
  */
 const welcomeFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { flowDynamic, state, provider }) => {
-        const userId = ctx.from; // Identificador único por usuario
+        console.log("📩 Nuevo mensaje recibido en Railway:");
+        console.log(JSON.stringify(ctx, null, 2));
+
+        const userId = ctx.from;
 
         if (!userQueues.has(userId)) {
             userQueues.set(userId, []);
@@ -77,11 +80,11 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
         const queue = userQueues.get(userId);
         queue.push({ ctx, flowDynamic, state, provider });
 
-        // Si este es el único mensaje en la cola, procesarlo inmediatamente
         if (!userLocks.get(userId) && queue.length === 1) {
             await handleQueue(userId);
         }
     });
+
 
 /**
  * Función principal que configura e inicia el bot
