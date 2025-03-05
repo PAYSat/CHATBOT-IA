@@ -1,19 +1,34 @@
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext", // Usar ESNext para compatibilidad con Rollup
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "rootDir": "./src", // Especificar la carpeta raíz como "src"
-    "baseUrl": "./src", // Ajustar baseUrl para que coincida con rootDir
-    "paths": {
-      "~/*": ["./*"] // Ajustar los alias para que apunten a la carpeta src
+  {
+    "compilerOptions": {
+      "target": "ES2022",
+      "module": "ES2022",
+      "declaration": false,
+      "declarationMap": false,
+      "moduleResolution": "node",
+      "removeComments": true,
+      "emitDecoratorMetadata": true,
+      "experimentalDecorators": true,
+      "allowSyntheticDefaultImports": true,
+      "sourceMap": false,
+      "outDir": "./dist",
+      "baseUrl": "./",
+      "rootDir": "./",
+      "incremental": true,
+      "skipLibCheck": true,
+      "paths": {
+        "~/*": ["./src/*"]
+      }
     },
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "forceConsistentCasingInFileNames": true
-  },
-  "include": ["src/**/*"], // Solo incluir archivos dentro de src/
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
-}
+    "include": [
+      "**/*.js",
+      "**/*.ts"
+    ],
+    "exclude": [
+      "node_modules",
+      "dist",
+      "**/*.test.ts",
+      "**/*.spec.ts",
+      "**e2e**",
+      "**mock**"
+    ]
+  }
