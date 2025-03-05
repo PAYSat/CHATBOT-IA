@@ -4,6 +4,8 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import express from "express";
+import twilio from "twilio";
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -87,6 +89,8 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
  * Función principal que configura e inicia el bot
  */
 const main = async () => {
+
+    const app = express();
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -106,13 +110,25 @@ const main = async () => {
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
-    const { httpServer } = await createBot({
+    const { httpServer, provider } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
 
-    httpInject(adapterProvider.server);
+    // Asegurar que Twilio reciba una respuesta vacía para evitar JSON inesperado
+    provider.server.post('/webhook', async (req, res) => {
+    const twiml = new twilio.twiml.MessagingResponse();
+    const mensajeEntrante = req.body.Body;
+    const numeroRemitente = req.body.From;
+
+    console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
+
+    res.type("text/xml").send(twiml.toString()); // Evita devolver JSON en WhatsApp
+    processUserMessage(numeroRemitente, { flowDynamic: null, state: null, provider: null });
+    });
+    
+    httpInject(provider.server);
     httpServer(+PORT);
 };
 
