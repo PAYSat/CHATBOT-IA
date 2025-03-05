@@ -5,6 +5,8 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import express from "express";
+
 
 const PORT = process.env.PORT ?? 3008;
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
@@ -19,7 +21,7 @@ const adapterProvider = createProvider(TwilioProvider, {
 });
 
 // 🔹 Webhook para recibir mensajes de Twilio, sin Express
-adapterProvider.server.use(require("express").urlencoded({ extended: false }));
+adapterProvider.server.use(express.urlencoded({ extended: false }));
 
 adapterProvider.server.post("/webhook", async (req, res) => {
     const twiml = new twilio.twiml.MessagingResponse();
