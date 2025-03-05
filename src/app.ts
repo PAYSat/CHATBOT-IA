@@ -87,8 +87,6 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
  * Función principal que configura e inicia el bot
  */
 const main = async () => {
-    console.log("🚀 Iniciando bot...");
-
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -103,24 +101,21 @@ const main = async () => {
         user: process.env.POSTGRES_DB_USER,
         password: process.env.POSTGRES_DB_PASSWORD,
         database: process.env.POSTGRES_DB_NAME,
-        port: Number(process.env.POSTGRES_DB_PORT),
+        port: Number(process.env.POSTGRES_DB_PORT)
     });
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
-    const { httpServer, provider } = await createBot({
+    const { httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
 
-    httpInject(provider.server); // Inyecta el servidor HTTP de Twilio en BuilderBot
+    httpInject(adapterProvider.server);
 
-    // 🔥 Aquí aseguramos que el servidor responde a Twilio correctamente
-    httpServer(+PORT);
-
-    // 🛠️ Agregamos una ruta manual para pruebas
-    provider.server.post("/webhook", async (req, res) => {
+    // 📌 🔹 Webhook para recibir mensajes de Twilio y responder en XML
+    adapterProvider.server.post("/webhook", async (req, res) => {
         console.log("🔹 Twilio Webhook recibido:", req.body);
 
         res.set("Content-Type", "application/xml"); // Twilio espera XML
@@ -130,8 +125,8 @@ const main = async () => {
             </Response>
         `);
     });
+
+    httpServer(+PORT);
 };
 
-main().catch((err) => {
-    console.error("❌ Error al iniciar el bot:", err);
-});
+main();
