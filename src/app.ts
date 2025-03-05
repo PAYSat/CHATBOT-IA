@@ -89,8 +89,6 @@ const welcomeFlow = addKeyword(EVENTS.WELCOME)
  * Función principal que configura e inicia el bot
  */
 const main = async () => {
-
-    const app = express();
     const adapterFlow = createFlow([welcomeFlow]);
 
     const adapterProvider = createProvider(TwilioProvider, {
@@ -99,16 +97,13 @@ const main = async () => {
         vendorNumber: process.env.VENDOR_NUMBER,
     });
 
-    const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        host: process.env.POSTGRES_DB_HOST,         // Host proporcionado por Railway
-        user: process.env.POSTGRES_DB_USER,         // Usuario proporcionado por Railway
-        password: process.env.POSTGRES_DB_PASSWORD, // Contraseña proporcionada por Railway
-        database: process.env.POSTGRES_DB_NAME,     // Nombre de la base de datos
+        host: process.env.POSTGRES_DB_HOST,
+        user: process.env.POSTGRES_DB_USER,
+        password: process.env.POSTGRES_DB_PASSWORD,
+        database: process.env.POSTGRES_DB_NAME,
         port: Number(process.env.POSTGRES_DB_PORT)
     });
-    const endDB = Date.now();
-    console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
     const { httpServer, provider } = await createBot({
         flow: adapterFlow,
@@ -116,18 +111,33 @@ const main = async () => {
         database: adapterDB,
     });
 
-    // Asegurar que Twilio reciba una respuesta vacía para evitar JSON inesperado
+    // Configura el endpoint del webhook para Twilio
     provider.server.post('/webhook', async (req, res) => {
-    const twiml = new twilio.twiml.MessagingResponse();
-    const mensajeEntrante = req.body.Body;
-    const numeroRemitente = req.body.From;
+        const twiml = new twilio.twiml.MessagingResponse();
 
-    console.log(`📩 Mensaje recibido de ${numeroRemitente}: ${mensajeEntrante}`);
+        // Log del mensaje recibido
+        console.log("📩 Mensaje recibido de Twilio:", req.body);
 
-    res.type("text/xml").send(twiml.toString()); // Evita devolver JSON en WhatsApp
-    processUserMessage(numeroRemitente, { flowDynamic: null, state: null, provider: null });
+        // Responder con un TwiML vacío para confirmar la recepción del mensaje
+        res.type("text/xml").send(twiml.toString());
+
+        // Procesar el mensaje del usuario
+        const userId = req.body.From; // Número del remitente
+        const mensajeEntrante = req.body.Body; // Mensaje recibido
+
+        if (!userQueues.has(userId)) {
+            userQueues.set(userId, []);
+        }
+
+        const queue = userQueues.get(userId);
+        queue.push({ ctx: { from: userId, body: mensajeEntrante }, flowDynamic: null, state: null, provider: null });
+
+        // Si este es el único mensaje en la cola, procesarlo inmediatamente
+        if (!userLocks.get(userId) && queue.length === 1) {
+            await handleQueue(userId);
+        }
     });
-    
+
     httpInject(provider.server);
     httpServer(+PORT);
 };
