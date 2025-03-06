@@ -4,6 +4,10 @@ import { PostgreSQLAdapter } from "@builderbot/database-postgres";
 import { TwilioProvider } from "@builderbot/provider-twilio";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
+import express from "express";
+import twilio from "twilio";
+
+
 
 /** Puerto en el que se ejecutará el servidor */
 const PORT = process.env.PORT ?? 3008;
@@ -11,6 +15,8 @@ const PORT = process.env.PORT ?? 3008;
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? "";
 const userQueues = new Map();
 const userLocks = new Map(); // Mecanismo de bloqueo
+
+
 
 /**
  * Procesa el mensaje del usuario enviándolo a OpenAI y devolviendo la respuesta.
@@ -111,27 +117,20 @@ const main = async () => {
         provider: adapterProvider,
         database: adapterDB,
     });
-    adapterProvider.server.post(
-        '/webhook',
-        handleCtx(async (bot, req, res) => {
-            const { Body, From, To } = req.body;
     
-            // Log para verificar que la solicitud ha llegado
-            console.log("📩 Webhook recibido:", { Body, From, To });
-    
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ 
-                body: {
-                    Body: Body || "",
-                    From: From || "whatsapp: unknown",
-                    To: To || "whatsapp: unknown"
-                }
-            }));
-        })
-    );
     
     httpInject(adapterProvider.server);
 
+    adapterProvider.server.post(
+        '/webhook',
+        handleCtx(async (bot, req, res) => {
+            console.log("📩 Webhook recibido:", req.body);
+    
+            // Solo responder con status 200 sin cuerpo
+            res.type("text/xml");
+            res.status(200).end();
+        })
+    );
     
 
     
