@@ -114,10 +114,19 @@ const main = async () => {
     adapterProvider.server.post(
         '/webhook',
         handleCtx(async (bot, req, res) => {
-            const { number, intent } = req.body;
+            const { Body, From, To } = req.body;
+    
+            // Log para verificar que la solicitud ha llegado
+            console.log("📩 Webhook recibido:", { Body, From, To });
     
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ status: 'ok', number, intent }));
+            return res.end(JSON.stringify({ 
+                body: {
+                    Body: Body || "",
+                    From: From || "whatsapp: unknown",
+                    To: To || "whatsapp: unknown"
+                }
+            }));
         })
     );
     
