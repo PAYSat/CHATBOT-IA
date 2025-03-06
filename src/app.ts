@@ -111,17 +111,19 @@ const main = async () => {
         provider: adapterProvider,
         database: adapterDB,
     });
-
-    httpInject(adapterProvider.server);
-
     adapterProvider.server.post(
         '/webhook',
         handleCtx(async (bot, req, res) => {
-            const { number, intent } = req.body
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            return res.end(JSON.stringify({ status: 'ok', number, intent }))
+            const { number, intent } = req.body;
+    
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ status: 'ok', number, intent }));
         })
-    )
+    );
+    
+    httpInject(adapterProvider.server);
+
+    
 
     
     httpServer(+PORT);
