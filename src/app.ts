@@ -106,13 +106,24 @@ const main = async () => {
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
 
-    const { httpServer } = await createBot({
+    const { handleCtx, httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
 
     httpInject(adapterProvider.server);
+
+    adapterProvider.server.post(
+        '/webhook',
+        handleCtx(async (bot, req, res) => {
+            const { number, intent } = req.body
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            return res.end(JSON.stringify({ status: 'ok', number, intent }))
+        })
+    )
+
+    
     httpServer(+PORT);
 };
 
