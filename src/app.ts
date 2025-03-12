@@ -97,11 +97,11 @@ const main = async () => {
 
     const startDB = Date.now();
     const adapterDB = new PostgreSQLAdapter({
-        host: process.env.POSTGRES_DB_HOST,
-        user: process.env.POSTGRES_DB_USER,
-        database: process.env.POSTGRES_DB_NAME,
-        password: process.env.POSTGRES_DB_PASSWORD,
-        port: Number(process.env.POSTGRES_DB_PORT),
+        host: process.env.POSTGRES_DB_HOST,         // Host proporcionado por Railway
+        user: process.env.POSTGRES_DB_USER,         // Usuario proporcionado por Railway
+        password: process.env.POSTGRES_DB_PASSWORD, // Contraseña proporcionada por Railway
+        database: process.env.POSTGRES_DB_NAME,     // Nombre de la base de datos
+        port: Number(process.env.POSTGRES_DB_PORT)
     });
     const endDB = Date.now();
     console.log(`🗄️ PostgreSQL Query Time: ${(endDB - startDB) / 1000} segundos`);
