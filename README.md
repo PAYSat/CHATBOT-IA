@@ -1,4 +1,4 @@
-# WhatsApp AI Assistant Bot (BuilderBot.app)
+# Bot de Asistente IA para WhatsApp (BuilderBot.app)
 
 <p align="center">
   <img src="https://builderbot.vercel.app/assets/thumbnail-vector.png" height="80">
@@ -6,70 +6,67 @@
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/6VbbLI?referralCode=jyd_0y)
 
-This project creates a WhatsApp bot that integrates with an AI assistant using BuilderBot technology. It allows for automated conversations and intelligent responses powered by OpenAI's assistant API.
+Este proyecto crea un bot de WhatsApp que integra un asistente de IA mediante la **librería BuilderBot**.  
+Se basa en el repositorio oficial de ejemplo <https://github.com/leifermendez/builderbot-openai-assistants> y utiliza:
 
-## Features
+* **Twilio** como proveedor de WhatsApp  
+* **PostgreSQL** como base de datos  
+* **OpenAI** Assistant para las respuestas de IA  
 
-- Automated conversation flows for WhatsApp
-- Integration with OpenAI's assistant API
-- Agnostic to WhatsApp provider
-- Automated responses to frequently asked questions
-- Real-time message receiving and responding
-- Interaction tracking with customers
-- Expandable functionality through triggers
+> **Revisa siempre** las versiones declaradas en `package.json` y compáralas con las últimas librerías oficiales de BuilderBot (<https://www.builderbot.app/es>) para evitar cambios incompatibles.
 
-## Getting Started
+## Características
+- Flujos de conversación automatizados para WhatsApp  
+- Integración con OpenAI Assistant  
+- Proveedor de WhatsApp configurable (por defecto Twilio)  
+- Registro de interacciones en PostgreSQL  
+- Respuestas automáticas a preguntas frecuentes  
+- Mensajería en tiempo real  
+- Ampliable mediante *triggers* y nuevos flujos
 
-1. Clone this repository
-2. Install dependencies:
-   ```
-   pnpm install
-   ```
-3. Set up your environment variables in a `.env` file:
-   ```
-   PORT=3008
-   ASSISTANT_ID=your_openai_assistant_id
-   ```
-4. Run the development server:
-   ```
-   pnpm run dev
-   ```
+## Primeros pasos
+1. Clona el repositorio  
+   `git clone https://github.com/tu-usuario/whatsapp-ai-assistant-bot.git`  
+   `cd whatsapp-ai-assistant-bot`
+2. Instala dependencias  
+   `pnpm install`
+3. Crea un archivo `.env` con tus variables:
+       PORT=3008
 
-### Using Docker (Recommended)
+       # OpenAI
+       OPENAI_API_KEY=tu_clave_openai
+       ASSISTANT_ID=tu_assistant_id
 
-This project includes a Dockerfile for easy deployment and consistent environments. To use Docker:
+       # Twilio
+       TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+       TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
 
-1. Build the Docker image:
-   ```
-   docker build -t whatsapp-ai-assistant .
-   ```
-2. Run the container:
-   ```
-   docker run -p 3008:3008 --env-file .env whatsapp-ai-assistant
-   ```
+       # PostgreSQL
+       DATABASE_URL=postgresql://usuario:password@host:5432/bd
+4. Inicia el servidor de desarrollo  
+   `pnpm run dev`
 
-This method ensures that the application runs in a consistent environment across different systems.
+## Docker (opcional)
+* Construir imagen  
+  `docker build -t whatsapp-ai-assistant .`
+* Ejecutar contenedor  
+  `docker run -p 3008:3008 --env-file .env whatsapp-ai-assistant`
 
-## Usage
+## Uso
+Toda la lógica del bot se encuentra en `src/app.ts`, donde se definen los flujos BuilderBot y la conexión con OpenAI Assistant.
 
-The bot is configured in the `src/app.ts` file. It uses the BuilderBot library to create flows and handle messages. The main welcome flow integrates with the OpenAI assistant to generate responses.
+## Documentación
+Documentación oficial: <https://builderbot.vercel.app/>
 
-## Documentation
+## Contribuciones
+Se aceptan *pull requests*. Haz *fork*, crea una rama y envía tu PR.
 
-For more detailed information on how to use and extend this bot, please refer to the [BuilderBot documentation](https://builderbot.vercel.app/).
+## Licencia
+MIT
 
-## Contributing
+## Contacto
+Discord → <https://link.codigoencasa.com/DISCORD>  
+Twitter → <https://twitter.com/leifermendez>
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is open-source and available under the [MIT License](LICENSE).
-
-## Contact
-
-For questions and support, join our [Discord community](https://link.codigoencasa.com/DISCORD) or follow us on [Twitter](https://twitter.com/leifermendez).
-
----
-
-Built with [BuilderBot](https://www.builderbot.app/en) - Empowering conversational AI for WhatsApp
+Construido con ❤️ y BuilderBot – Potenciando la IA conversacional en WhatsApp.
